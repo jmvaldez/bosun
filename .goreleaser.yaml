@@ -1,0 +1,102 @@
+# GoReleaser drives releases (D-4): tarballs, .deb and .rpm, checksums, and a
+# Homebrew formula. `make release` runs it in snapshot mode; a v* tag runs it
+# for real from .github/workflows/release.yml.
+version: 2
+project_name: bosun
+
+builds:
+  - id: bosun
+    main: .
+    binary: bosun
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - id: tarball
+    formats: [tar.gz]
+    name_template: "bosun_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      # The plugin travels with the binary so the repo is not needed to install it.
+      - src: plugin/**/*
+        dst: share/bosun/plugin
+        info: {mode: 0644}
+      - src: .claude-plugin/marketplace.json
+        dst: share/bosun/.claude-plugin
+        strip_parent: true
+        info: {mode: 0644}
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+nfpms:
+  - id: packages
+    package_name: bosun
+    ids: [bosun]
+    formats: [deb, rpm]
+    file_name_template: "{{ .PackageName }}_{{ .Version }}_{{ .Arch }}"
+    maintainer: jmvaldez <jmvaldez@users.noreply.github.com>
+    description: Watches Claude Code agent sessions across tmux, flags runaways, tracks spend.
+    homepage: https://github.com/jmvaldez/bosun
+    section: utils
+    license: MIT
+    recommends: [tmux]
+    contents:
+      # `claude plugin marketplace add /usr/share/bosun` finds the manifest at
+      # /usr/share/bosun/.claude-plugin and the plugin under plugin/.
+      # Listed file by file: a `type: tree` entry would apply the file mode to
+      # the directories too and make them untraversable. A test keeps this list
+      # equal to the files under plugin/.
+      - src: plugin/.claude-plugin/plugin.json
+        dst: /usr/share/bosun/plugin/.claude-plugin/plugin.json
+        file_info: {mode: 0644}
+      - src: plugin/hooks/hooks.json
+        dst: /usr/share/bosun/plugin/hooks/hooks.json
+        file_info: {mode: 0644}
+      - src: .claude-plugin/marketplace.json
+        dst: /usr/share/bosun/.claude-plugin/marketplace.json
+        file_info: {mode: 0644}
+      - src: LICENSE
+        dst: /usr/share/doc/bosun/copyright
+        file_info: {mode: 0644}
+    scripts:
+      postinstall: packaging/postinstall.sh
+
+brews:
+  - name: bosun
+    ids: [tarball]
+    repository:
+      owner: jmvaldez
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: https://github.com/jmvaldez/bosun
+    description: Watches Claude Code agent sessions across tmux, flags runaways, tracks spend.
+    license: MIT
+    # auto skips the tap upload for prerelease tags (v1.0.0-rc1); snapshot builds
+    # never publish anything.
+    skip_upload: auto
+    install: |
+      bin.install "bosun"
+      pkgshare.install "share/bosun/plugin", "share/bosun/.claude-plugin"
+    caveats: |
+      Finish setting up as your own user:
+        bosun setup
+    test: |
+      assert_match version.to_s, shell_output("#{bin}/bosun --version")
+
+snapshot:
+  version_template: "{{ .Env.BOSUN_VERSION }}-SNAPSHOT-{{ .ShortCommit }}"
+
+changelog:
+  disable: true
+
+release:
+  github:
+    owner: jmvaldez
+    name: bosun

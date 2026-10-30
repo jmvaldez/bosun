@@ -1,0 +1,29 @@
+[
+  {
+    "id": "<id-1>",
+    "cwd": "/work/project",
+    "kind": "background",
+    "startedAt": 1788019576728,
+    "sessionId": "<session-1>",
+    "name": "<redacted>",
+    "state": "blocked"
+  },
+  {
+    "id": "<id-2>",
+    "cwd": "/work/project",
+    "kind": "background",
+    "startedAt": 1788048944865,
+    "sessionId": "<session-2>",
+    "name": "<redacted>",
+    "state": "blocked"
+  },
+  {
+    "pid": 2462297,
+    "cwd": "/work/project",
+    "kind": "interactive",
+    "startedAt": 1792793684418,
+    "sessionId": "<session-3>",
+    "name": "<redacted>",
+    "status": "busy"
+  }
+]

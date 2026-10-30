@@ -1,0 +1,64 @@
+name: release
+
+# Runs when you push a tag like v0.1.0. The owner steps that must exist first
+# (secrets, the tap repo, Pages) are in build-log/RELEASE.md.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # creates the release
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: the tag matches VERSION (the plugin manifests carry it)
+        run: |
+          test "v$(cat VERSION)" = "$GITHUB_REF_NAME" || {
+            echo "tag $GITHUB_REF_NAME does not match VERSION $(cat VERSION)" >&2; exit 1; }
+      - run: make vet && make test-short
+      - uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
+        with:
+          distribution: goreleaser
+          version: v2.19.0
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # A token with contents:write on jmvaldez/homebrew-tap.
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+  apt-repo:
+    name: signed apt repository on GitHub Pages
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # pushes gh-pages
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: download the release's .deb files
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release download "$GITHUB_REF_NAME" --pattern '*.deb' --dir debs
+      - name: build and sign the repository
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          REQUIRE_SIGNED: '1'
+        run: scripts/build-apt-repo.sh debs site
+      - name: publish to gh-pages
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: site
+          publish_branch: gh-pages
+          # Keep earlier files (the pool); dists/ is rewritten for the new release.
+          keep_files: true

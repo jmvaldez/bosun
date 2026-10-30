@@ -1,0 +1,15 @@
+{
+  "name": "bosun",
+  "owner": {
+    "name": "jmvaldez"
+  },
+  "description": "Marketplace for the bosun Claude Code plugin.",
+  "plugins": [
+    {
+      "name": "bosun",
+      "source": "./plugin",
+      "version": "0.1.0",
+      "description": "Attention state, runaway alerts, and spend tracking for Claude Code agent sessions in tmux."
+    }
+  ]
+}

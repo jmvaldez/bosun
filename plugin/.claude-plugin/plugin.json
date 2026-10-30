@@ -1,0 +1,8 @@
+{
+  "name": "bosun",
+  "version": "0.1.0",
+  "description": "Records Claude Code hook events for bosun, which watches agent sessions across tmux.",
+  "author": {
+    "name": "jmvaldez"
+  }
+}

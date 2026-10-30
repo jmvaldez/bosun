@@ -1,0 +1,52 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: vet, test -short, cross, staticcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - run: make vet
+      # -short skips the slow and load-sensitive timing tests (TestHookLatency,
+      # LESSONS L-51); the full job below runs them.
+      - run: make test-short
+      - run: make cross
+      - run: make staticcheck
+
+  full:
+    name: full tests with a private tmux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - run: sudo apt-get update && sudo apt-get install -y tmux git
+      # Opt-in suites run on private tmux sockets (-L bosun-test-*) and never touch the runner's own.
+      - run: BOSUN_TEST_TMUX=1 make test
+
+  packaging:
+    name: snapshot release builds every artifact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - run: make release
+      - run: ls -l dist/*.tar.gz dist/*.deb dist/*.rpm dist/checksums.txt
+      - name: the .deb has the right contents
+        run: dpkg-deb -I dist/bosun_*_amd64.deb && dpkg-deb -c dist/bosun_*_amd64.deb
