@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"strconv"
 	"time"
@@ -50,7 +49,7 @@ func (a *app) notifyClick(args []string) int {
 		fmt.Fprintln(a.errw, "bosun notify-click: needs --id, --session and gdbus")
 		return 2
 	}
-	exe, _ := os.Executable()
+	exe, _ := a.exe()
 	e := runner.Exec{}
 	clicked, err := notify.Listen(notify.ClickDeps{Stream: e, Run: a.ad.Runner, Gdbus: gdbus, Exe: exe, Timeout: timeout}, id, session)
 	if err != nil {

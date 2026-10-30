@@ -136,3 +136,20 @@ func TestStatusSegmentShowsWhatLiveCostHides(t *testing.T) {
 		t.Errorf("segment = %q", r.out)
 	}
 }
+
+func TestTildePathLeavesOtherHomesAlone(t *testing.T) {
+	for _, tt := range []struct{ in, want string }{
+		{"/home/jo/x", "~/x"},
+		{"/home/joe/x", "/home/joe/x"},
+		{"/home/jo", "~"},
+		{"missing /home/jo: not found", "missing ~: not found"},
+		{"/home/jo/a and /home/joe/b", "~/a and /home/joe/b"},
+	} {
+		if got := tildePath("/home/jo", tt.in); got != tt.want {
+			t.Errorf("tildePath(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+	if got := tildePath("", "/x"); got != "/x" {
+		t.Errorf("empty home: got %q", got)
+	}
+}

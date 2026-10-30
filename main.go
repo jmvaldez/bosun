@@ -6,9 +6,11 @@ import (
 	_ "embed"
 	"io"
 	"os"
+	"os/exec"
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"sync"
 
 	"github.com/jmvaldez/bosun/internal/paths"
 	"github.com/jmvaldez/bosun/internal/platform"
@@ -58,6 +60,27 @@ type app struct {
 	out     io.Writer
 	errw    io.Writer
 	catchUp func()
+
+	// exe and tmuxBin are resolved on first use and then cached, so the hook and
+	// statusline hot paths never pay for either.
+	exeOnce  sync.Once
+	exePath  string
+	exeErr   error
+	tmuxOnce sync.Once
+	tmuxPath string
+	tmuxErr  error
+}
+
+// exe is the path of the running binary, resolved once.
+func (a *app) exe() (string, error) {
+	a.exeOnce.Do(func() { a.exePath, a.exeErr = os.Executable() })
+	return a.exePath, a.exeErr
+}
+
+// tmuxBin is the tmux binary on PATH, resolved once.
+func (a *app) tmuxBin() (string, error) {
+	a.tmuxOnce.Do(func() { a.tmuxPath, a.tmuxErr = exec.LookPath("tmux") })
+	return a.tmuxPath, a.tmuxErr
 }
 
 func run(args []string, in io.Reader, out, errw io.Writer) int {

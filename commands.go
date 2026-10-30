@@ -1,10 +1,12 @@
 package main
 
+// Command table, dispatch and the app helpers that more than one command shares.
+// Each command itself lives in cmd_<name>.go.
+
 import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 
 	"github.com/jmvaldez/bosun/internal/claude"
 	"github.com/jmvaldez/bosun/internal/config"
@@ -13,8 +15,8 @@ import (
 	"github.com/jmvaldez/bosun/internal/install"
 	"github.com/jmvaldez/bosun/internal/paths"
 	"github.com/jmvaldez/bosun/internal/platform"
-	"github.com/jmvaldez/bosun/internal/refresh"
 	"github.com/jmvaldez/bosun/internal/statusline"
+	"github.com/jmvaldez/bosun/internal/task"
 	"github.com/jmvaldez/bosun/internal/term"
 	"github.com/jmvaldez/bosun/internal/tmux"
 )
@@ -22,42 +24,41 @@ import (
 // command is one entry of the command table. catchUp is the single place that
 // says which commands run a catch-up evaluation before they act (LESSONS L-26):
 // every user-facing command that reads or acts on session state, never the hot
-// paths. `status` is its own evaluation.
+// paths. `status` is its own evaluation. readOnly marks commands that must not
+// write into bosun's dirs, so they leave the purge marker to the next command
+// that does.
 type command struct {
-	name    string
-	catchUp bool
-	run     func(a *app, args []string) int
+	name     string
+	catchUp  bool
+	readOnly bool
+	run      func(a *app, args []string) int
 }
 
 func commands() []command {
 	return []command{
-		{"hook", false, func(a *app, args []string) int { return hook.Run(a.ad, args, a.in) }},
-		{"statusline", false, func(a *app, args []string) int { return statusline.Run(a.ad, args, a.in, a.out, a.errw) }},
-		{"refresh", false, (*app).refresh},
-		{"install", false, (*app).install},
-		{"setup", false, (*app).setup},
-		{"tmux-sync", false, (*app).tmuxSync},
-		{"config", false, (*app).config},
-		{"status", false, (*app).status},
-		{"jump", true, (*app).jump},
-		{"spend", true, (*app).spend},
-		{"ack", true, (*app).ack},
-		{"ui", true, (*app).ui},
-		{"tag", true, (*app).tag},
-		{"backfill", false, (*app).backfill},
-		{"doctor", false, (*app).doctor},
-		{"uninstall", false, (*app).uninstall},
-		{"run", false, (*app).run},
-		{"notify", false, (*app).notifyCmd},
-		{"notify-dispatch", false, (*app).notifyDispatch},
-		{"notify-click", false, (*app).notifyClick},
-		{"version", false, func(a *app, _ []string) int { fmt.Fprintf(a.out, "bosun %s\n", version); return 0 }},
+		{name: "hook", run: func(a *app, args []string) int { return hook.Run(a.ad, args, a.in) }},
+		{name: "statusline", run: func(a *app, args []string) int { return statusline.Run(a.ad, args, a.in, a.out, a.errw) }},
+		{name: "refresh", run: (*app).refresh},
+		{name: "install", run: (*app).install},
+		{name: "setup", run: (*app).setup},
+		{name: "tmux-sync", run: (*app).tmuxSync},
+		{name: "config", readOnly: true, run: (*app).config},
+		{name: "status", run: (*app).status},
+		{name: "jump", catchUp: true, run: (*app).jump},
+		{name: "spend", catchUp: true, run: (*app).spend},
+		{name: "ack", catchUp: true, run: (*app).ack},
+		{name: "ui", catchUp: true, run: (*app).ui},
+		{name: "tag", catchUp: true, run: (*app).tag},
+		{name: "backfill", run: (*app).backfill},
+		{name: "doctor", readOnly: true, run: (*app).doctor},
+		{name: "uninstall", readOnly: true, run: (*app).uninstall},
+		{name: "run", run: (*app).runTask},
+		{name: "notify", run: (*app).notifyCmd},
+		{name: "notify-dispatch", run: (*app).notifyDispatch},
+		{name: "notify-click", run: (*app).notifyClick},
+		{name: "version", readOnly: true, run: func(a *app, _ []string) int { fmt.Fprintf(a.out, "bosun %s\n", version); return 0 }},
 	}
 }
-
-// readOnly lists commands that must not write into bosun's dirs, so they leave
-// the purge marker to the next command that does.
-var readOnly = map[string]bool{"doctor": true, "uninstall": true, "version": true, "config": true}
 
 func (a *app) dispatch(args []string) int {
 	if len(args) == 0 {
@@ -77,13 +78,27 @@ func (a *app) dispatch(args []string) int {
 				a.catchUp()
 			}
 			rc := c.run(a, rest)
-			if !readOnly[c.name] {
+			if !c.readOnly {
 				paths.EnsureMarkers(a.ad.Paths)
 			}
 			return rc
 		}
 	}
 	fmt.Fprintf(a.errw, "bosun: unknown command %q\n", name)
+	usage(a.errw)
+	return 2
+}
+
+// bare is `bosun` with no arguments. On a terminal, before bosun is set up, it
+// runs the setup flow first; either way it then does what it always did, except
+// that cancelling the question ends it there.
+func (a *app) bare() int {
+	if in, ok := a.in.(*os.File); ok && isTerminal(in) && isTerminal(a.out) && !install.IsSetUp(a.ad, install.Options{}) {
+		if rc, cancelled := a.runSetup(nil); cancelled {
+			return rc
+		}
+		fmt.Fprintln(a.out)
+	}
 	usage(a.errw)
 	return 2
 }
@@ -100,63 +115,9 @@ func (a *app) withIdentity(cfg config.Config) {
 	a.ad.Identity = platform.ClaudeIdentity{Runner: a.ad.Runner, Bin: bin}
 }
 
-func (a *app) refresh(_ []string) int {
-	cfg := a.loadConfig()
-	a.withIdentity(cfg)
-	return refresh.Run(a.ad, cfg, a.out, a.errw)
-}
-
-func (a *app) install(args []string) int {
-	opt := install.Options{Version: version}
-	for i := 0; i < len(args); i++ {
-		switch arg := args[i]; {
-		case arg == "--repo" && i+1 < len(args):
-			i++
-			opt.Repo = args[i]
-		case arg == "--settings" && i+1 < len(args):
-			i++
-			opt.Settings = args[i]
-		case arg == "--tmux-conf" && i+1 < len(args):
-			i++
-			opt.TmuxConf = args[i]
-		case arg == "--apply" || arg == "--yes" || arg == "--show-diff" || arg == "-v":
-			fmt.Fprintf(a.errw, "bosun install: %s was removed; run `bosun setup`\n", arg)
-			return 2
-		default:
-			fmt.Fprintf(a.errw, "bosun install: unknown argument %q\n", arg)
-			return 2
-		}
-	}
-	opt.Config = a.loadConfig()
-	a.withIdentity(opt.Config)
-	a.exePaths(&opt)
-	return install.Run(a.ad, opt, a.out)
-}
-
-func (a *app) applyEnv(cfg config.Config, yes bool) install.Env {
-	claudeBin, _ := claude.Resolve(cfg)
-	tmuxBin, _ := exec.LookPath("tmux")
-	tty := isTerminal(a.in)
-	// Bold depends on where the output goes, not on where input comes from.
-	color := isTerminal(a.out) && a.ad.Getenv("NO_COLOR") == ""
-	tenv := a.ad.Getenv("TMUX")
-	return install.Env{
-		Home: a.ad.Getenv("HOME"), Color: color,
-		Runner: a.ad.Runner, ClaudeBin: claudeBin, TmuxBin: tmuxBin, TmuxSocket: tmux.SocketFromEnv(tenv), InTmux: tenv != "",
-		Stdin: a.in, TTY: tty, Yes: yes, Now: a.ad.Clock.Now,
-	}
-}
-
-func (a *app) config(_ []string) int {
-	cfg, res, err := config.Load(a.ad.Paths.ConfigFile())
-	if err != nil {
-		fmt.Fprintf(a.out, "# error: %s: %v (showing defaults)\n\n", a.ad.Paths.ConfigFile(), err)
-	}
-	fmt.Fprint(a.out, config.Format(cfg, res))
-	if err != nil {
-		return 1
-	}
-	return 0
+// parser is the task-key parser built from the configured [task] section.
+func (a *app) parser() *task.Parser {
+	return task.FromConfig(a.loadConfig().Task)
 }
 
 // tmuxClient talks to the server the caller runs under ($TMUX), or to --socket.
@@ -165,7 +126,7 @@ func (a *app) tmuxClient(socket, bin string) tmux.Client {
 		socket = tmux.SocketFromEnv(a.ad.Getenv("TMUX"))
 	}
 	if bin == "" {
-		if p, err := exec.LookPath("tmux"); err == nil {
+		if p, err := a.tmuxBin(); err == nil {
 			bin = p
 		}
 	}
@@ -173,8 +134,14 @@ func (a *app) tmuxClient(socket, bin string) tmux.Client {
 }
 
 func (a *app) evalDeps(notify bool) eval.Deps {
-	exe, _ := os.Executable()
-	return eval.Deps{Ad: a.ad, Cfg: a.loadConfig(), Tmux: a.tmuxClient("", ""), Exe: exe, Notify: notify}
+	return a.evalDepsWith(a.loadConfig(), a.tmuxClient("", ""), notify)
+}
+
+// evalDepsWith is evalDeps for a caller that already holds the config and the
+// tmux client.
+func (a *app) evalDepsWith(cfg config.Config, tc tmux.Client, notify bool) eval.Deps {
+	exe, _ := a.exe()
+	return eval.Deps{Ad: a.ad, Cfg: cfg, Tmux: tc, Exe: exe, Notify: notify}
 }
 
 // evaluate runs one evaluation. Only the periodic status job (`status --tmux`)

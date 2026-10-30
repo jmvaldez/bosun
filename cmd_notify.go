@@ -2,10 +2,8 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 
-	"github.com/jmvaldez/bosun/internal/eval"
 	"github.com/jmvaldez/bosun/internal/notify"
 )
 
@@ -15,7 +13,7 @@ func (a *app) notifyDeps() (notify.Deps, string) {
 	cfg := a.loadConfig()
 	n, why := notify.Resolve(cfg.Notify.Backend, a.ad.Kind, exec.LookPath, a.ad.Runner)
 	d := notify.Deps{Paths: a.ad.Paths, Cfg: cfg, Notifier: n, Clock: a.ad.Clock}
-	if exe, err := os.Executable(); err == nil && a.ad.Spawner != nil {
+	if exe, err := a.exe(); err == nil && a.ad.Spawner != nil {
 		d.Spawn = func(args ...string) error { return a.ad.Spawner.Spawn(exe, args...) }
 	}
 	if n != nil {
@@ -69,36 +67,6 @@ func (a *app) notifyCmd(args []string) int {
 	fmt.Fprintf(a.out, "%s via %s: %s\n", out, d.Notifier.Name(), reason)
 	if out != notify.Posted {
 		return 1
-	}
-	return 0
-}
-
-// ack dismisses alerts until their conditions clear, and retracts their notices.
-func (a *app) ack(args []string) int {
-	id, all := "", false
-	switch {
-	case len(args) == 1 && args[0] == "--all":
-		all = true
-	case len(args) == 1 && args[0] != "" && args[0][0] != '-':
-		id = args[0]
-	default:
-		fmt.Fprintln(a.errw, "usage: bosun ack ID | --all")
-		return 2
-	}
-	got, err := eval.Dismiss(a.ad.Paths, id, all)
-	if err != nil {
-		fmt.Fprintf(a.errw, "bosun ack: %v\n", err)
-		return 1
-	}
-	d, _ := a.notifyDeps()
-	for _, al := range got {
-		if d.Notifier != nil {
-			_, _, _ = notify.Dispatch(d, notify.Request{Retract: true, Group: notify.Group(notify.Kind(al.Rule), al.Session)})
-		}
-		fmt.Fprintf(a.out, "dismissed %s (%s %s)\n", al.ID, al.Rule, al.Detail)
-	}
-	if len(got) == 0 {
-		fmt.Fprintln(a.out, "nothing to dismiss")
 	}
 	return 0
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -53,8 +54,7 @@ type uiSource struct {
 // without Exe and Notify would swallow every alert fire and never retract one.
 // Focus suppression still applies in the dispatcher.
 func (s *uiSource) evalDeps() eval.Deps {
-	exe, _ := os.Executable()
-	return eval.Deps{Ad: s.a.ad, Cfg: s.cfg, Tmux: s.tc, Exe: exe, Notify: true}
+	return s.a.evalDepsWith(s.cfg, s.tc, true)
 }
 
 func (s *uiSource) load() ui.Data {
@@ -134,7 +134,7 @@ func (u *uiActions) Dismiss(session, agent string) (int, error) {
 // `bosun spend --csv --since P --by G` prints for that period and grouping.
 func (u *uiActions) Export(period, group string) (string, error) {
 	if u.src.db == nil {
-		return "", fmt.Errorf("no ledger")
+		return "", errors.New("no ledger")
 	}
 	snap, err := u.src.db.Load(time.Time{})
 	if err != nil {
@@ -258,7 +258,12 @@ func (a *app) ui(args []string) int {
 	if startSpend {
 		m.SetTab(ui.TabSpend)
 	}
-	err := ui.Run(os.Stdin, a.out, m, func() ui.Data {
+	in, ok := a.in.(*os.File)
+	if !ok {
+		fmt.Fprintln(a.errw, "bosun ui: input is not a terminal file")
+		return 1
+	}
+	err := ui.Run(in, a.out, m, func() ui.Data {
 		d := src.load()
 		src.lastSessions = d.Sessions
 		return d

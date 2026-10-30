@@ -8,7 +8,6 @@ import (
 
 	"github.com/jmvaldez/bosun/internal/doctor"
 	"github.com/jmvaldez/bosun/internal/install"
-	"github.com/jmvaldez/bosun/internal/tmux"
 )
 
 // setup is the first-run flow (D-31): one question, then the plugin, the tmux
@@ -68,7 +67,7 @@ func (a *app) runSetup(args []string) (rc int, cancelled bool) {
 // exePaths gives opt the running binary's stable path and the directories to
 // look for the share dir in, plus the working directory for a checkout.
 func (a *app) exePaths(opt *install.Options) {
-	if exe, err := os.Executable(); err == nil {
+	if exe, err := a.exe(); err == nil {
 		bosun, dirs := install.StablePaths(exe, exec.LookPath)
 		opt.Bosun = bosun
 		opt.SearchDirs = append(opt.SearchDirs, dirs...)
@@ -82,7 +81,7 @@ func (a *app) exePaths(opt *install.Options) {
 // setting without waiting for the next refresh, then runs the doctor checks and
 // shows only what failed.
 func (a *app) afterSetup(rc int) {
-	if exe, err := os.Executable(); err == nil && a.ad.Spawner != nil {
+	if exe, err := a.exe(); err == nil && a.ad.Spawner != nil {
 		_ = a.ad.Spawner.Spawn(exe, "refresh")
 	}
 	var bad []doctor.Check
@@ -109,36 +108,26 @@ func (a *app) afterSetup(rc int) {
 	}
 }
 
+// tildePath shortens home to ~ inside free text. A home that is only a prefix of
+// another path (/home/jo against /home/joe) is left alone.
 func tildePath(home, s string) string {
 	if home == "" {
 		return s
 	}
-	return strings.ReplaceAll(s, home, "~")
-}
-
-// bare is `bosun` with no arguments. On a terminal, before bosun is set up, it
-// runs the setup flow first; either way it then does what it always did, except
-// that cancelling the question ends it there.
-func (a *app) bare() int {
-	if in, ok := a.in.(*os.File); ok && isTerminal(in) && isTerminal(a.out) && !install.IsSetUp(a.ad, install.Options{}) {
-		if rc, cancelled := a.runSetup(nil); cancelled {
-			return rc
+	var b strings.Builder
+	for {
+		i := strings.Index(s, home)
+		if i < 0 {
+			break
 		}
-		fmt.Fprintln(a.out)
+		b.WriteString(s[:i])
+		s = s[i+len(home):]
+		if s == "" || !strings.ContainsRune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-", rune(s[0])) {
+			b.WriteString("~")
+		} else {
+			b.WriteString(home)
+		}
 	}
-	usage(a.errw)
-	return 2
-}
-
-// tmuxSync is the SessionStart hook's detached child: load the current conf
-// into the tmux server the session runs under, if that server has not yet.
-func (a *app) tmuxSync(_ []string) int {
-	defer func() { _ = recover() }() // a hook's child must never be the thing that fails
-	opt := install.Options{Version: version, Config: a.loadConfig()}
-	a.exePaths(&opt)
-	tenv := a.ad.Getenv("TMUX")
-	tmuxBin, _ := exec.LookPath("tmux")
-	env := install.Env{Runner: a.ad.Runner, TmuxBin: tmuxBin, TmuxSocket: tmux.SocketFromEnv(tenv), InTmux: tenv != "", Home: a.ad.Getenv("HOME")}
-	install.SyncTmux(a.ad, opt, env)
-	return 0
+	b.WriteString(s)
+	return b.String()
 }
