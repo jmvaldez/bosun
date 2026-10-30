@@ -1,7 +1,7 @@
-// Package install implements `bosun install`. It prints every edit the user
-// must make themselves and writes only bosun-owned files: a commented
-// config.toml (if absent), bosun's own tmux.conf, and identity.json. `bosun
-// setup` (D-31) is the route that makes the edits; see setup.go.
+// Package install owns first-run setup: the bosun-owned files it writes (a
+// commented config.toml if absent, bosun's own tmux.conf, identity.json) and the
+// plugin and status line edits to Claude Code. `bosun install` prints every edit
+// the user must make themselves; `bosun setup` (D-31) makes them, see setup.go.
 package install
 
 import (

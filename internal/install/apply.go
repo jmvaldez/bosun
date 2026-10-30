@@ -126,22 +126,9 @@ func UninstallApply(ad platform.Adapters, opt Options, env Env, out io.Writer, e
 }
 
 func runSteps(env Env, head, nothing string, steps []Step, out io.Writer) int {
-	rc := 0
 	fmt.Fprintln(out, env.bold(head))
 	fmt.Fprintln(out)
-	var pending []Step
-	var done, skipped []string
-	for _, s := range steps {
-		switch {
-		case s.Refuse != "":
-			skipped = append(skipped, "! "+s.Name+": "+s.Refuse)
-			rc = 1
-		case s.Done:
-			done = append(done, s.Name)
-		default:
-			pending = append(pending, s)
-		}
-	}
+	pending, done, skipped, rc := classifySteps(steps)
 	if len(pending) == 0 {
 		fmt.Fprintln(out, nothing)
 		for _, l := range skipped {
@@ -154,21 +141,7 @@ func runSteps(env Env, head, nothing string, steps []Step, out io.Writer) int {
 		plural = ""
 	}
 	fmt.Fprintln(out, env.bold(fmt.Sprintf("bosun will make %d change%s:", len(pending), plural)))
-	var backs []string
-	for i, s := range pending {
-		fmt.Fprintf(out, "\n  %d. %s\n", i+1, s.Title)
-		for _, l := range s.Detail {
-			fmt.Fprintf(out, "       %s\n", l)
-		}
-		if env.ShowDiff {
-			for _, l := range s.Diff {
-				fmt.Fprintf(out, "       %s\n", l)
-			}
-		}
-		if s.Backup != "" {
-			backs = append(backs, s.Backup)
-		}
-	}
+	backs := printPending(out, env, pending)
 	fmt.Fprintln(out)
 	if len(backs) > 0 {
 		fmt.Fprintf(out, "Backups of %s are saved before writing.\n", joinAnd(backs))
@@ -198,6 +171,53 @@ func runSteps(env Env, head, nothing string, steps []Step, out io.Writer) int {
 	if env.Yes {
 		fmt.Fprintln(out)
 	}
+	if applyPending(out, pending) != 0 {
+		rc = 1
+	}
+	return rc
+}
+
+// classifySteps sorts steps into those still to do, those already done, and
+// the refusals; any refusal makes the exit code 1.
+func classifySteps(steps []Step) (pending []Step, done, skipped []string, rc int) {
+	for _, s := range steps {
+		switch {
+		case s.Refuse != "":
+			skipped = append(skipped, "! "+s.Name+": "+s.Refuse)
+			rc = 1
+		case s.Done:
+			done = append(done, s.Name)
+		default:
+			pending = append(pending, s)
+		}
+	}
+	return pending, done, skipped, rc
+}
+
+// printPending numbers the pending steps with their details and returns the
+// files that will be backed up.
+func printPending(out io.Writer, env Env, pending []Step) (backs []string) {
+	for i, s := range pending {
+		fmt.Fprintf(out, "\n  %d. %s\n", i+1, s.Title)
+		for _, l := range s.Detail {
+			fmt.Fprintf(out, "       %s\n", l)
+		}
+		if env.ShowDiff {
+			for _, l := range s.Diff {
+				fmt.Fprintf(out, "       %s\n", l)
+			}
+		}
+		if s.Backup != "" {
+			backs = append(backs, s.Backup)
+		}
+	}
+	return backs
+}
+
+// applyPending runs the steps, reports each result, and returns 1 if any
+// failed.
+func applyPending(out io.Writer, pending []Step) int {
+	rc := 0
 	var backups []string
 	for _, s := range pending {
 		lines, err := s.Do()

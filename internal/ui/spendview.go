@@ -169,14 +169,23 @@ func (m *Model) weekBars(days [7]weekDay, height, bw int) []string {
 // leftPane is the summary beside the tree: today's total against the budget,
 // the week, today by model, and the subagent share.
 func (m *Model) leftPane(w, rows int) []string {
-	d := m.data
-	clk := d.Clock
+	clk := m.data.Clock
 	if clk.Loc == nil {
 		return nil
 	}
+	l := m.todayLines(w)
+	l = append(l, "")
+	l = append(l, m.weekLines(w, rows)...)
+	l = append(l, "")
+	return append(l, m.modelLines(w, clk.Day(m.data.Now))...)
+}
+
+// todayLines is today's total with the budget or pace bar under it.
+func (m *Model) todayLines(w int) []string {
+	d := m.data
+	clk := d.Clock
 	now := d.Now
-	day := clk.Day(now)
-	t := spend.DayTotal(d.Contribs, clk, day, time.Time{})
+	t := spend.DayTotal(d.Contribs, clk, clk.Day(now), time.Time{})
 	var l []string
 	l = append(l, m.sty(cGrey, "TODAY · "+strings.ToUpper(now.In(clk.Loc).Format("Mon Jan 2"))))
 	if big := bigNumber(usd(t.USD), w); big != nil {
@@ -198,10 +207,13 @@ func (m *Model) leftPane(w, rows int) []string {
 	} else {
 		l = append(l, m.sty(cGrey, "pace: collecting days"))
 	}
-	l = append(l, "")
+	return l
+}
 
+// weekLines is the last-seven-days bar chart, sized to the pane.
+func (m *Model) weekLines(w, rows int) []string {
 	days, sum := m.week()
-	l = append(l, m.sty(cGrey, "LAST 7 DAYS · "+usd(sum)))
+	l := []string{m.sty(cGrey, "LAST 7 DAYS · "+usd(sum))}
 	height, bw := 6, 3
 	switch {
 	case rows < 24:
@@ -212,10 +224,14 @@ func (m *Model) leftPane(w, rows int) []string {
 	if w < 7*3+6 {
 		bw = 2
 	}
-	l = append(l, m.weekBars(days, height, bw)...)
-	l = append(l, "")
+	return append(l, m.weekBars(days, height, bw)...)
+}
 
-	// Today by model; the rows plus the unattributed remainder add up to the total.
+// modelLines is today by model plus the subagent share; the rows plus the
+// unattributed remainder add up to the total.
+func (m *Model) modelLines(w int, day string) []string {
+	d := m.data
+	clk := d.Clock
 	models := map[string]float64{}
 	estModel := map[string]bool{}
 	var all, sub, unattr float64
@@ -252,7 +268,7 @@ func (m *Model) leftPane(w, rows int) []string {
 		}
 		return list[i].k < list[j].k
 	})
-	l = append(l, m.sty(cGrey, "BY MODEL · TODAY"))
+	l := []string{m.sty(cGrey, "BY MODEL · TODAY")}
 	var other float64
 	for i, e := range list {
 		if i >= 3 {

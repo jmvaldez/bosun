@@ -259,6 +259,72 @@ scripts/demo.sh up && scripts/demo.sh attach   # private tmux server with throwa
 `CONTEXT.md` defines terms, `kit/` holds the spec, `build-log/` holds decisions
 and milestone notes.
 
+### Code layout
+
+`main` is the composition root: `main.go` builds the platform adapters once,
+each command lives in its own `cmd_<name>.go`, and `commands.go` holds the
+command table and dispatch. Everything else is under `internal/`, grouped here
+by role. `CONTEXT.md` defines the terms.
+
+Hot path (runs on every hook):
+
+- `hook` records one Claude Code hook event; the hottest path in bosun.
+- `statusline` records the live session total, then runs your real status line.
+- `stdin` reads a pipe without ever blocking past a deadline.
+- `heartbeat` records when hooks last ran and how long they took.
+
+Evaluation:
+
+- `eval` folds hook events into `live.json`, runs the alert rules and answers the segment, `status` and `jump`.
+- `live` holds per-session state: the event fold and the `live.json` file.
+- `rules` keeps alert state, at most one alert per rule and scope.
+- `subcost` estimates what a running subagent has spent from its transcript.
+- `pace` compares today's spend with the median of earlier days.
+
+Spend:
+
+- `ledger` is the SQLite store; only CLI processes open it.
+- `spend` turns ledger rows into the day, task, repo, session, prompt, request, model and subagent views.
+- `prices` is the only place tokens become dollars.
+- `refresh` is the detached job that keeps the agents cache, account key, ledger and today's spend current.
+
+Surfaces:
+
+- `ui` is the popup, a pure model behind small terminal and tmux interfaces.
+- `segment` renders the tmux status segment and the text summary.
+- `notify` renders and posts desktop notifications.
+- `jump` picks the next pane in the waiting queue.
+- `peek` reads one line of text from a session's transcript.
+
+Setup and checks:
+
+- `install` owns first-run setup and the edits it makes.
+- `uninstall` prints the steps to remove bosun and, with `--purge`, deletes its dirs.
+- `doctor` is the read-only self-check.
+- `tmuxconf` generates the tmux conf bosun owns.
+- `plugstate` reads Claude Code's plugin bookkeeping, read-only.
+
+Claude Code and tmux:
+
+- `claude` reads what bosun learns from the `claude` CLI.
+- `tmux` wraps the few tmux commands bosun runs.
+- `worktree` adds the git worktree `bosun run --worktree` asks for.
+- `gitinfo` reads repo and branch straight from `.git` files.
+- `task` is the one issue-key parser.
+
+Plumbing:
+
+- `paths` resolves bosun's directories.
+- `platform` holds the OS seams and the adapters bundle `main` hands down.
+- `runner` runs child processes, each with a deadline.
+- `flock` takes advisory locks that never wait forever.
+- `atomicfile` writes state files as temp file plus rename.
+- `clean` turns decoded strings into values safe to store.
+- `config` loads `config.toml`.
+- `term` puts the terminal in raw mode and decodes keys.
+- `shell` quotes strings for a POSIX shell.
+- `testguard` keeps tests out of the real home.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

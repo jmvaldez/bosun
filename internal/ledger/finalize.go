@@ -143,23 +143,7 @@ func (d *DB) finalizeSession(id string, o IngestOpts) error {
 		return nil // nothing is known about this id
 	}
 
-	// Task: tag > env > branch > transcript gitBranch. The hook derived its key
-	// with the default pattern; a branch-sourced task is re-derived with the
-	// configured one, env and tag are never re-derived (D-16).
-	taskKey, taskSrc := "", ""
-	switch {
-	case facts.tag != "":
-		taskKey, taskSrc = facts.tag, task.SourceTag
-	case facts.hookSrc == task.SourceEnv && facts.hookTask != "":
-		taskKey, taskSrc = facts.hookTask, task.SourceEnv
-	}
-	if taskKey == "" && o.Parser != nil {
-		if k := o.Parser.Key(facts.hookBranch); k != "" {
-			taskKey, taskSrc = k, task.SourceBranch
-		} else if k := o.Parser.Key(cur.trBranch); k != "" {
-			taskKey, taskSrc = k, task.SourceTranscript
-		}
-	}
+	taskKey, taskSrc := resolveTask(facts, cur.trBranch, o.Parser)
 
 	account := facts.account
 	if account == "" {
@@ -180,52 +164,9 @@ func (d *DB) finalizeSession(id string, o IngestOpts) error {
 		ended = last
 	}
 
-	rows, err := loadSessionRequests(tx, id)
+	total, banked, coveredFrom, trusted, err := sessionTotals(tx, id, facts, live)
 	if err != nil {
 		return err
-	}
-	var est float64
-	for _, r := range rows {
-		est += PriceRequest(r).USD
-	}
-	var rolled sql.NullFloat64 // rows already folded into rollups still belong to the estimate
-	if err := tx.QueryRow("SELECT SUM(usd) FROM rollups WHERE session_id = ?", id).Scan(&rolled); err != nil {
-		return err
-	}
-	est += rolled.Float64
-	cs, err := costStateSum(tx, id)
-	if err != nil {
-		return err
-	}
-
-	var total, banked float64
-	var coveredFrom int64
-	trusted := true
-	switch {
-	case facts.snap != nil && live:
-		total, banked = facts.snap.CostUSD, facts.snap.BankedUSD
-	case cs.found:
-		total = cs.sum
-		// D-21: spend before the earliest cost-state group belongs to a process
-		// that never wrote one (a crash, a resume that restored nothing).
-		// Claude's figure does not cover it, so add its transcript estimate.
-		coveredFrom = cs.earliest
-		for _, r := range rows {
-			if r.TS.UnixMilli() < coveredFrom {
-				total += PriceRequest(r).USD
-			}
-		}
-		if facts.snap != nil {
-			// A /login reset may be missing from cost-state; keep whatever the
-			// status line banked beyond it, never both (that would double count).
-			if extra := facts.snap.CostUSD + facts.snap.BankedUSD - cs.sum; extra > 0 {
-				banked = extra
-			}
-		}
-	case facts.snap != nil:
-		total, banked = facts.snap.CostUSD, facts.snap.BankedUSD
-	default:
-		total, trusted = est, false
 	}
 
 	forkedFrom, inherited := cur.forkedFrom, 0.0
@@ -264,6 +205,80 @@ func (d *DB) finalizeSession(id string, o IngestOpts) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// resolveTask picks the session's task by precedence.
+func resolveTask(facts stateFacts, trBranch string, parser *task.Parser) (taskKey, taskSrc string) {
+	// Task: tag > env > branch > transcript gitBranch. The hook derived its key
+	// with the default pattern; a branch-sourced task is re-derived with the
+	// configured one, env and tag are never re-derived (D-16).
+	switch {
+	case facts.tag != "":
+		taskKey, taskSrc = facts.tag, task.SourceTag
+	case facts.hookSrc == task.SourceEnv && facts.hookTask != "":
+		taskKey, taskSrc = facts.hookTask, task.SourceEnv
+	}
+	if taskKey == "" && parser != nil {
+		if k := parser.Key(facts.hookBranch); k != "" {
+			taskKey, taskSrc = k, task.SourceBranch
+		} else if k := parser.Key(trBranch); k != "" {
+			taskKey, taskSrc = k, task.SourceTranscript
+		}
+	}
+	return taskKey, taskSrc
+}
+
+// sessionTotals prices the session: the total and banked spend, where
+// cost-state coverage starts, and whether the figure is Claude's own (trusted)
+// or a transcript estimate.
+func sessionTotals(tx *sql.Tx, id string, facts stateFacts, live bool) (total, banked float64, coveredFrom int64, trusted bool, err error) {
+	rows, err := loadSessionRequests(tx, id)
+	if err != nil {
+		return 0, 0, 0, false, err
+	}
+	var est float64
+	for _, r := range rows {
+		est += PriceRequest(r).USD
+	}
+	var rolled sql.NullFloat64 // rows already folded into rollups still belong to the estimate
+	if err := tx.QueryRow("SELECT SUM(usd) FROM rollups WHERE session_id = ?", id).Scan(&rolled); err != nil {
+		return 0, 0, 0, false, err
+	}
+	est += rolled.Float64
+	cs, err := costStateSum(tx, id)
+	if err != nil {
+		return 0, 0, 0, false, err
+	}
+
+	trusted = true
+	switch {
+	case facts.snap != nil && live:
+		total, banked = facts.snap.CostUSD, facts.snap.BankedUSD
+	case cs.found:
+		total = cs.sum
+		// D-21: spend before the earliest cost-state group belongs to a process
+		// that never wrote one (a crash, a resume that restored nothing).
+		// Claude's figure does not cover it, so add its transcript estimate.
+		coveredFrom = cs.earliest
+		for _, r := range rows {
+			if r.TS.UnixMilli() < coveredFrom {
+				total += PriceRequest(r).USD
+			}
+		}
+		if facts.snap != nil {
+			// A /login reset may be missing from cost-state; keep whatever the
+			// status line banked beyond it, never both (that would double count).
+			if extra := facts.snap.CostUSD + facts.snap.BankedUSD - cs.sum; extra > 0 {
+				banked = extra
+			}
+		}
+	case facts.snap != nil:
+		total, banked = facts.snap.CostUSD, facts.snap.BankedUSD
+	default:
+		total, trusted = est, false
+	}
+
+	return total, banked, coveredFrom, trusted, nil
 }
 
 // rankSQL is the task-source precedence as plain SQL: no Go functions are

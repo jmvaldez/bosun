@@ -74,52 +74,21 @@ func (m *Model) rebuildTree() {
 	label := m.sessionLabels()
 	m.lastPrompt = map[string]int{}
 
-	get := func(mp map[string]*node, k string, mk func() *node) *node {
-		if n, ok := mp[k]; ok {
-			return n
-		}
-		n := mk()
-		n.key = k
-		mp[k] = n
-		return n
-	}
-	add := func(n *node, c spend.Contribution) {
-		n.usd += c.USD
-		n.est = n.est || c.Est
-		if c.Redacted {
-			n.hidden++
-		} else {
-			n.shown++
-		}
-		if c.Kind == spend.RequestRow {
-			n.reqs++
-			n.in += c.Req.Input
-			n.out += c.Req.Output
-			n.cache += c.Req.CacheRead + c.Req.Cache5m + c.Req.Cache1h
-			if n.first.IsZero() || c.TS.Before(n.first) {
-				n.first = c.TS
-			}
-			if c.TS.After(n.last) {
-				n.last = c.TS
-			}
-		}
-	}
-
 	for _, c := range cs {
 		gk := spend.GroupKey(by, c, m.data.Clock)
-		root := get(roots, "g:"+gk, func() *node { return &node{kind: kGroup, label: gk} })
-		add(root, c)
+		root := nodeFor(roots, "g:"+gk, func() *node { return &node{kind: kGroup, label: gk} })
+		addContribution(root, c)
 		parent := root
 		if by != "session" {
 			sk := "g:" + gk + "/s:" + c.Session.ID
-			sn := get(sessions, sk, func() *node {
+			sn := nodeFor(sessions, sk, func() *node {
 				l, meta := label(c.Session)
 				return &node{kind: kSession, session: c.Session.ID, label: l, meta: meta, repo: shortRepo(c.Session.Repo)}
 			})
 			if root.repo == "" {
 				root.repo = sn.repo
 			}
-			add(sn, c)
+			addContribution(sn, c)
 			if sn.depth == 0 {
 				root.children = appendOnce(root.children, sn)
 			}
@@ -131,37 +100,19 @@ func (m *Model) rebuildTree() {
 			root.repo = shortRepo(c.Session.Repo)
 		}
 		if c.Kind == spend.Unattributed {
-			un := get(prompts, parent.key+"/unattributed", func() *node { return &node{kind: kUnattr, label: "unattributed", session: c.Session.ID} })
-			add(un, c)
+			un := nodeFor(prompts, parent.key+"/unattributed", func() *node { return &node{kind: kUnattr, label: "unattributed", session: c.Session.ID} })
+			addContribution(un, c)
 			parent.children = appendOnce(parent.children, un)
 			continue
 		}
 		pk := parent.key + "/p:" + c.Req.PromptID
-		pn := get(prompts, pk, func() *node {
-			l, when := "no prompt", ""
-			if c.PromptN > 0 {
-				l = fmt.Sprintf("prompt #%d", c.PromptN)
-				if p, ok := m.data.Snap.Prompts[c.Req.PromptID]; ok && !p.StartedAt.IsZero() {
-					when = p.StartedAt.In(m.data.Clock.Loc).Format("15:04")
-				}
-				if c.PromptN > m.lastPrompt[c.Session.ID] {
-					m.lastPrompt[c.Session.ID] = c.PromptN
-				}
-			}
-			return &node{kind: kPrompt, label: l, meta: when, num: c.PromptN, session: c.Session.ID, prompt: c.Req.PromptID}
-		})
-		add(pn, c)
+		pn := nodeFor(prompts, pk, func() *node { return m.promptNode(c) })
+		addContribution(pn, c)
 		parent.children = appendOnce(parent.children, pn)
 		if c.Req.AgentID != "" {
 			sk := pk + "/a:" + c.Req.AgentID
-			sub := get(subs, sk, func() *node {
-				t := c.AgentType
-				if t == "" {
-					t = "subagent"
-				}
-				return &node{kind: kSub, session: c.Session.ID, label: t, runaway: m.subRunaway(c.Session.ID, c.Req.AgentID)}
-			})
-			add(sub, c)
+			sub := nodeFor(subs, sk, func() *node { return m.subNode(c) })
+			addContribution(sub, c)
 			if !strings.Contains(sub.label, " ") && c.Req.Model != "" {
 				sub.label += " " + modelLabel(c.Req.Model)
 			}
@@ -174,6 +125,77 @@ func (m *Model) rebuildTree() {
 		pn.children = append(pn.children, rn)
 	}
 
+	out := sortedRoots(roots)
+	for _, r := range out {
+		finish(r, 0)
+	}
+	m.tree = out
+	if n := len(m.visible()); m.spendSel >= n {
+		m.spendSel = max(n-1, 0)
+	}
+}
+
+// nodeFor returns the node stored under k, creating it with mk on first use.
+func nodeFor(mp map[string]*node, k string, mk func() *node) *node {
+	if n, ok := mp[k]; ok {
+		return n
+	}
+	n := mk()
+	n.key = k
+	mp[k] = n
+	return n
+}
+
+// addContribution folds one contribution into the totals of n.
+func addContribution(n *node, c spend.Contribution) {
+	n.usd += c.USD
+	n.est = n.est || c.Est
+	if c.Redacted {
+		n.hidden++
+	} else {
+		n.shown++
+	}
+	if c.Kind == spend.RequestRow {
+		n.reqs++
+		n.in += c.Req.Input
+		n.out += c.Req.Output
+		n.cache += c.Req.CacheRead + c.Req.Cache5m + c.Req.Cache1h
+		if n.first.IsZero() || c.TS.Before(n.first) {
+			n.first = c.TS
+		}
+		if c.TS.After(n.last) {
+			n.last = c.TS
+		}
+	}
+}
+
+// promptNode makes the prompt node for c and records the session's latest
+// prompt number.
+func (m *Model) promptNode(c spend.Contribution) *node {
+	l, when := "no prompt", ""
+	if c.PromptN > 0 {
+		l = fmt.Sprintf("prompt #%d", c.PromptN)
+		if p, ok := m.data.Snap.Prompts[c.Req.PromptID]; ok && !p.StartedAt.IsZero() {
+			when = p.StartedAt.In(m.data.Clock.Loc).Format("15:04")
+		}
+		if c.PromptN > m.lastPrompt[c.Session.ID] {
+			m.lastPrompt[c.Session.ID] = c.PromptN
+		}
+	}
+	return &node{kind: kPrompt, label: l, meta: when, num: c.PromptN, session: c.Session.ID, prompt: c.Req.PromptID}
+}
+
+// subNode makes the subagent node for c.
+func (m *Model) subNode(c spend.Contribution) *node {
+	t := c.AgentType
+	if t == "" {
+		t = "subagent"
+	}
+	return &node{kind: kSub, session: c.Session.ID, label: t, runaway: m.subRunaway(c.Session.ID, c.Req.AgentID)}
+}
+
+// sortedRoots lists the roots by spend, highest first, then by label.
+func sortedRoots(roots map[string]*node) []*node {
 	var out []*node
 	for _, r := range roots {
 		out = append(out, r)
@@ -184,13 +206,7 @@ func (m *Model) rebuildTree() {
 		}
 		return out[i].label < out[j].label
 	})
-	for _, r := range out {
-		finish(r, 0)
-	}
-	m.tree = out
-	if n := len(m.visible()); m.spendSel >= n {
-		m.spendSel = max(n-1, 0)
-	}
+	return out
 }
 
 func redactedInt(c spend.Contribution) int {

@@ -40,41 +40,7 @@ func (d Deps) evalRules(f *live.File, now time.Time) ruleResult {
 		if s.Ended || !s.Visible() {
 			continue
 		}
-		for aid, sub := range s.Subs {
-			scope := s.ID + "/" + aid
-			age := now.Sub(sub.Start)
-			if cfg.Rules.SubagentRuntime > 0 && age >= cfg.Rules.SubagentRuntime {
-				add(rules.Cond{Rule: rules.SubagentRuntime, Scope: scope, Session: s.ID, Agent: aid,
-					Detail: fmt.Sprintf("subagent %s > %s", notify.FormatDuration(age), notify.FormatDuration(cfg.Rules.SubagentRuntime))},
-					ruleInfo{session: s, agent: sub.Type, dur: age})
-			}
-			if tp := subagentTranscript(s.Transcript, aid); tp != "" {
-				if sub.Cost == nil {
-					sub.Cost = &subcost.Tracker{}
-				}
-				sub.CostUSD = sub.Cost.Update(tp)
-			}
-			if cfg.Rules.SubagentCost > 0 && sub.CostUSD >= cfg.Rules.SubagentCost {
-				add(rules.Cond{Rule: rules.SubagentCost, Scope: scope, Session: s.ID, Agent: aid,
-					Detail: fmt.Sprintf("subagent $%.2f est. > $%.2f", sub.CostUSD, cfg.Rules.SubagentCost)},
-					ruleInfo{session: s, agent: sub.Type, usd: sub.CostUSD})
-			}
-		}
-		if cfg.Rules.Quiet > 0 && s.State == live.Working && !s.ToolOpen && !s.BGPending && len(s.Subs) == 0 {
-			if gap := now.Sub(s.LastEvent); gap >= cfg.Rules.Quiet {
-				add(rules.Cond{Rule: rules.Quiet, Scope: s.ID, Session: s.ID, Detail: "quiet " + notify.FormatDuration(gap)},
-					ruleInfo{session: s, dur: gap})
-			}
-		}
-		if step := cfg.Rules.SessionCost; step > 0 {
-			if own, ok := d.sessionOwn(s); ok {
-				if level := int(own / step); level >= 1 {
-					add(rules.Cond{Rule: rules.SessionCost, Scope: s.ID, Session: s.ID, Level: level,
-						Detail: "session " + smallUSD(own)},
-						ruleInfo{session: s, step: float64(level) * step})
-				}
-			}
-		}
+		d.sessionConds(s, now, add)
 	}
 
 	today := spend.ReadToday(p.Today(), day)
@@ -104,6 +70,58 @@ func (d Deps) evalRules(f *live.File, now time.Time) ruleResult {
 		d.retract(notify.Group(notify.Kind(a.Rule), a.Session))
 	}
 
+	markRunaway(f, store)
+	res := ruleResult{pace: st}
+	for _, a := range store.Active() {
+		res.alerts = append(res.alerts, *a)
+	}
+	return res
+}
+
+// sessionConds adds the conditions that hold for one live session: subagent
+// runtime and cost, quiet, and session cost.
+func (d Deps) sessionConds(s *live.Session, now time.Time, add func(rules.Cond, ruleInfo)) {
+	cfg := d.Cfg
+	for aid, sub := range s.Subs {
+		scope := s.ID + "/" + aid
+		age := now.Sub(sub.Start)
+		if cfg.Rules.SubagentRuntime > 0 && age >= cfg.Rules.SubagentRuntime {
+			add(rules.Cond{Rule: rules.SubagentRuntime, Scope: scope, Session: s.ID, Agent: aid,
+				Detail: fmt.Sprintf("subagent %s > %s", notify.FormatDuration(age), notify.FormatDuration(cfg.Rules.SubagentRuntime))},
+				ruleInfo{session: s, agent: sub.Type, dur: age})
+		}
+		if tp := subagentTranscript(s.Transcript, aid); tp != "" {
+			if sub.Cost == nil {
+				sub.Cost = &subcost.Tracker{}
+			}
+			sub.CostUSD = sub.Cost.Update(tp)
+		}
+		if cfg.Rules.SubagentCost > 0 && sub.CostUSD >= cfg.Rules.SubagentCost {
+			add(rules.Cond{Rule: rules.SubagentCost, Scope: scope, Session: s.ID, Agent: aid,
+				Detail: fmt.Sprintf("subagent $%.2f est. > $%.2f", sub.CostUSD, cfg.Rules.SubagentCost)},
+				ruleInfo{session: s, agent: sub.Type, usd: sub.CostUSD})
+		}
+	}
+	if cfg.Rules.Quiet > 0 && s.State == live.Working && !s.ToolOpen && !s.BGPending && len(s.Subs) == 0 {
+		if gap := now.Sub(s.LastEvent); gap >= cfg.Rules.Quiet {
+			add(rules.Cond{Rule: rules.Quiet, Scope: s.ID, Session: s.ID, Detail: "quiet " + notify.FormatDuration(gap)},
+				ruleInfo{session: s, dur: gap})
+		}
+	}
+	if step := cfg.Rules.SessionCost; step > 0 {
+		if own, ok := d.sessionOwn(s); ok {
+			if level := int(own / step); level >= 1 {
+				add(rules.Cond{Rule: rules.SessionCost, Scope: s.ID, Session: s.ID, Level: level,
+					Detail: "session " + smallUSD(own)},
+					ruleInfo{session: s, step: float64(level) * step})
+			}
+		}
+	}
+}
+
+// markRunaway sets each session's Runaway and QuietAlert flags from the
+// active alerts.
+func markRunaway(f *live.File, store rules.Store) {
 	run := store.BySession()
 	for id, s := range f.Sessions {
 		s.Runaway, s.QuietAlert = false, false
@@ -115,11 +133,6 @@ func (d Deps) evalRules(f *live.File, now time.Time) ruleResult {
 			}
 		}
 	}
-	res := ruleResult{pace: st}
-	for _, a := range store.Active() {
-		res.alerts = append(res.alerts, *a)
-	}
-	return res
 }
 
 // paceStatus reads the stored pace and today's spend; it takes no lock, so the
