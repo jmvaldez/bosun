@@ -7,42 +7,30 @@ import (
 
 	"github.com/jmvaldez/bosun/internal/shell"
 	"github.com/jmvaldez/bosun/internal/task"
+	"github.com/jmvaldez/bosun/internal/tmux"
 	"github.com/jmvaldez/bosun/internal/worktree"
 )
 
-// runTask opens a tasked Claude Code session in a new tmux window. The command goes
-// through `$SHELL -ic` so the user's launcher (an alias or function) applies,
-// and PATH is exported again after the rc file, which may reset it: without
-// that, hooks cannot find bosun and every event is lost (LESSONS L-02).
+// runTask opens a tasked Claude Code session in a new tmux window.
 func (a *app) runTask(args []string) int {
 	var taskArg, dir, branch string
 	var claudeArgs []string
-	for i := 0; i < len(args); i++ {
-		next := func() (string, bool) {
-			if i+1 < len(args) {
-				i++
-				return args[i], true
-			}
-			return "", false
-		}
-		var ok bool
-		switch args[i] {
+	p := a.args("run", args)
+	for arg, ok := p.next(); ok; arg, ok = p.next() {
+		var got bool
+		switch arg {
 		case "--task":
-			taskArg, ok = next()
+			taskArg, got = p.value()
 		case "--dir":
-			dir, ok = next()
+			dir, got = p.value()
 		case "--worktree":
-			branch, ok = next()
+			branch, got = p.value()
 		case "--":
-			claudeArgs = args[i+1:]
-			i = len(args)
-			ok = true
+			claudeArgs, got = p.rest(), true
 		default:
-			fmt.Fprintf(a.errw, "bosun run: unexpected argument %q\n", args[i])
-			return 2
+			return p.unknown()
 		}
-		if !ok {
-			fmt.Fprintf(a.errw, "bosun run: %s needs a value\n", args[i])
+		if !got {
 			return 2
 		}
 	}
@@ -52,20 +40,11 @@ func (a *app) runTask(args []string) int {
 	}
 	cfg := a.loadConfig()
 	tc := a.tmuxClient("", "")
-	if dir == "" {
-		if pane := a.ad.Getenv("TMUX_PANE"); pane != "" {
-			dir, _ = tc.PanePath(pane)
-		}
-		if dir == "" {
-			dir, _ = os.Getwd()
-		}
-	}
-	abs, err := filepath.Abs(dir)
+	dir, err := a.resolveDir(tc, dir)
 	if err != nil {
 		fmt.Fprintf(a.errw, "bosun run: %v\n", err)
 		return 1
 	}
-	dir = abs
 
 	key := ""
 	if taskArg != "" {
@@ -101,19 +80,40 @@ func (a *app) runTask(args []string) int {
 	if launcher == "" {
 		launcher = "claude"
 	}
-	inner := "export PATH=" + shell.Quote(filepath.Dir(exe)) + ":$PATH; export BOSUN_TASK=" + shell.Quote(key) + "; " + launcher
-	for _, c := range claudeArgs {
-		inner += " " + shell.Quote(c)
-	}
-	loginShell := a.ad.Getenv("SHELL")
-	if loginShell == "" {
-		loginShell = "/bin/sh"
-	}
-	command := shell.Quote(loginShell) + " -ic " + shell.Quote(inner)
+	command := launchCommand(exe, launcher, key, a.ad.Getenv("SHELL"), claudeArgs)
 	if err := tc.NewNamedWindow(dir, key, []string{"BOSUN_TASK=" + key}, command); err != nil {
 		fmt.Fprintf(a.errw, "bosun run: tmux: %v\n", err)
 		return 1
 	}
 	fmt.Fprintf(a.out, "opened window %s in %s\n", key, dir)
 	return 0
+}
+
+// resolveDir picks the window's directory: dir if given, else the invoking
+// pane's path, else the working directory, made absolute.
+func (a *app) resolveDir(tc tmux.Client, dir string) (string, error) {
+	if dir == "" {
+		if pane := a.ad.Getenv("TMUX_PANE"); pane != "" {
+			dir, _ = tc.PanePath(pane)
+		}
+		if dir == "" {
+			dir, _ = os.Getwd()
+		}
+	}
+	return filepath.Abs(dir)
+}
+
+// launchCommand builds the command for the new window. It goes through
+// `$SHELL -ic` so the user's launcher (an alias or function) applies, and PATH
+// is exported again after the rc file, which may reset it: without that, hooks
+// cannot find bosun and every event is lost (LESSONS L-02).
+func launchCommand(exe, launcher, key, loginShell string, claudeArgs []string) string {
+	inner := "export PATH=" + shell.Quote(filepath.Dir(exe)) + ":$PATH; export BOSUN_TASK=" + shell.Quote(key) + "; " + launcher
+	for _, c := range claudeArgs {
+		inner += " " + shell.Quote(c)
+	}
+	if loginShell == "" {
+		loginShell = "/bin/sh"
+	}
+	return shell.Quote(loginShell) + " -ic " + shell.Quote(inner)
 }

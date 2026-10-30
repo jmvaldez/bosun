@@ -14,14 +14,14 @@ import (
 // was after the first run.
 func (a *app) backfill(args []string) int {
 	since := "30d"
-	for i := 0; i < len(args); i++ {
-		if args[i] == "--since" && i+1 < len(args) {
-			i++
-			since = args[i]
-			continue
+	p := a.args("backfill", args)
+	for arg, ok := p.next(); ok; arg, ok = p.next() {
+		if arg != "--since" {
+			return p.unknown()
 		}
-		fmt.Fprintf(a.errw, "bosun backfill: unexpected argument %q\n", args[i])
-		return 2
+		if since, ok = p.value(); !ok {
+			return 2
+		}
 	}
 	cfg := a.loadConfig()
 	clock := spend.NewClock(cfg.Spend.Day)

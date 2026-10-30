@@ -13,7 +13,8 @@ import (
 func (a *app) uninstall(args []string) int {
 	apply, yes, showDiff := false, false, false
 	o := uninstall.Options{Home: a.ad.Getenv("HOME"), Settings: a.ad.Paths.ClaudeSettings(), Explicit: map[string]bool{}}
-	for _, arg := range args {
+	p := a.args("uninstall", args)
+	for arg, ok := p.next(); ok; arg, ok = p.next() {
 		switch arg {
 		case "--purge":
 			o.Purge = true
@@ -26,8 +27,7 @@ func (a *app) uninstall(args []string) int {
 		case "--show-diff", "-v":
 			showDiff = true
 		default:
-			fmt.Fprintf(a.errw, "bosun uninstall: unexpected argument %q\n", arg)
-			return 2
+			return p.unknown()
 		}
 	}
 	for kind, env := range map[string]string{"state": "BOSUN_STATE_DIR", "cache": "BOSUN_CACHE_DIR", "data": "BOSUN_DATA_DIR", "config": "BOSUN_CONFIG_DIR"} {

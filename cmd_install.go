@@ -11,22 +11,23 @@ import (
 
 func (a *app) install(args []string) int {
 	opt := install.Options{Version: version}
-	for i := 0; i < len(args); i++ {
-		switch arg := args[i]; {
-		case arg == "--repo" && i+1 < len(args):
-			i++
-			opt.Repo = args[i]
-		case arg == "--settings" && i+1 < len(args):
-			i++
-			opt.Settings = args[i]
-		case arg == "--tmux-conf" && i+1 < len(args):
-			i++
-			opt.TmuxConf = args[i]
-		case arg == "--apply" || arg == "--yes" || arg == "--show-diff" || arg == "-v":
+	p := a.args("install", args)
+	for arg, ok := p.next(); ok; arg, ok = p.next() {
+		var got bool
+		switch arg {
+		case "--repo":
+			opt.Repo, got = p.value()
+		case "--settings":
+			opt.Settings, got = p.value()
+		case "--tmux-conf":
+			opt.TmuxConf, got = p.value()
+		case "--apply", "--yes", "--show-diff", "-v":
 			fmt.Fprintf(a.errw, "bosun install: %s was removed; run `bosun setup`\n", arg)
 			return 2
 		default:
-			fmt.Fprintf(a.errw, "bosun install: unknown argument %q\n", arg)
+			return p.unknown()
+		}
+		if !got {
 			return 2
 		}
 	}

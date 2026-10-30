@@ -29,24 +29,25 @@ func (a *app) runSetup(args []string) (rc int, cancelled bool) {
 		so.Answer = &v
 		return true
 	}
-	for i := 0; i < len(args); i++ {
-		switch arg := args[i]; {
-		case arg == "--yes":
+	p := a.args("setup", args)
+	for arg, ok := p.next(); ok; arg, ok = p.next() {
+		switch arg {
+		case "--yes":
 			if !answer(true) {
 				fmt.Fprintln(a.errw, "bosun setup: --yes and --no cannot be combined")
 				return 2, false
 			}
-		case arg == "--no":
+		case "--no":
 			if !answer(false) {
 				fmt.Fprintln(a.errw, "bosun setup: --yes and --no cannot be combined")
 				return 2, false
 			}
-		case arg == "--repo" && i+1 < len(args):
-			i++
-			opt.Repo = args[i]
+		case "--repo":
+			if opt.Repo, ok = p.value(); !ok {
+				return 2, false
+			}
 		default:
-			fmt.Fprintf(a.errw, "bosun setup: unknown argument %q\n", arg)
-			return 2, false
+			return p.unknown(), false
 		}
 	}
 	opt.Config = a.loadConfig()

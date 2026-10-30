@@ -14,26 +14,24 @@ const nothingWaiting = "bosun: nothing waiting"
 // evaluation has already run (the command table says so).
 func (a *app) jump(args []string) int {
 	var client, socket, tmuxBin, session string
-	for i := 0; i < len(args); i++ {
-		next := func() string {
-			if i+1 < len(args) {
-				i++
-				return args[i]
-			}
-			return ""
-		}
-		switch args[i] {
+	p := a.args("jump", args)
+	for arg, ok := p.next(); ok; arg, ok = p.next() {
+		var got bool
+		switch arg {
 		case "--queue": // the default walk; the generated binding passes it and doctor looks for it
+			continue
 		case "--client":
-			client = next()
+			client, got = p.value()
 		case "--socket":
-			socket = next()
+			socket, got = p.value()
 		case "--tmux":
-			tmuxBin = next()
+			tmuxBin, got = p.value()
 		case "--session":
-			session = next()
+			session, got = p.value()
 		default:
-			fmt.Fprintf(a.errw, "bosun jump: unknown argument %q\n", args[i])
+			return p.unknown()
+		}
+		if !got {
 			return 2
 		}
 	}

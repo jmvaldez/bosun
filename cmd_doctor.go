@@ -14,10 +14,10 @@ import (
 // questions. Nothing here may create a file or a directory.
 func (a *app) doctor(args []string) int {
 	asJSON := false
-	for _, arg := range args {
+	p := a.args("doctor", args)
+	for arg, ok := p.next(); ok; arg, ok = p.next() {
 		if arg != "--json" {
-			fmt.Fprintf(a.errw, "bosun doctor: unexpected argument %q\n", arg)
-			return 2
+			return p.unknown()
 		}
 		asJSON = true
 	}

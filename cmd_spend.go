@@ -12,42 +12,24 @@ import (
 // spend ingests (so the numbers are current), then prints a breakdown.
 func (a *app) spend(args []string) int {
 	by, since, taskKey, format := "task", "", "", "text"
-	for i := 0; i < len(args); i++ {
-		next := func() (string, bool) {
-			if i+1 < len(args) {
-				i++
-				return args[i], true
-			}
-			return "", false
-		}
-		switch args[i] {
+	p := a.args("spend", args)
+	for arg, ok := p.next(); ok; arg, ok = p.next() {
+		var got bool
+		switch arg {
 		case "--by":
-			v, ok := next()
-			if !ok {
-				fmt.Fprintln(a.errw, "bosun spend: --by needs a value")
-				return 2
-			}
-			by = v
+			by, got = p.value()
 		case "--since":
-			v, ok := next()
-			if !ok {
-				fmt.Fprintln(a.errw, "bosun spend: --since needs a value")
-				return 2
-			}
-			since = v
+			since, got = p.value()
 		case "--task":
-			v, ok := next()
-			if !ok {
-				fmt.Fprintln(a.errw, "bosun spend: --task needs a value")
-				return 2
-			}
-			taskKey = v
+			taskKey, got = p.value()
 		case "--json":
-			format = "json"
+			format, got = "json", true
 		case "--csv":
-			format = "csv"
+			format, got = "csv", true
 		default:
-			fmt.Fprintf(a.errw, "bosun spend: unknown argument %q\n", args[i])
+			return p.unknown()
+		}
+		if !got {
 			return 2
 		}
 	}

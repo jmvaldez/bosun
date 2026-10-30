@@ -9,15 +9,21 @@ import (
 
 // ack dismisses alerts until their conditions clear, and retracts their notices.
 func (a *app) ack(args []string) int {
+	const usage = "bosun ack ID | --all"
 	id, all := "", false
-	switch {
-	case len(args) == 1 && args[0] == "--all":
-		all = true
-	case len(args) == 1 && args[0] != "" && args[0][0] != '-':
-		id = args[0]
-	default:
-		fmt.Fprintln(a.errw, "usage: bosun ack ID | --all")
-		return 2
+	p := a.args("ack", args)
+	for arg, ok := p.next(); ok; arg, ok = p.next() {
+		switch {
+		case arg == "--all" && id == "" && !all:
+			all = true
+		case arg != "" && arg[0] != '-' && id == "" && !all:
+			id = arg
+		default:
+			return p.usage(usage)
+		}
+	}
+	if id == "" && !all {
+		return p.usage(usage)
 	}
 	got, err := eval.Dismiss(a.ad.Paths, id, all)
 	if err != nil {

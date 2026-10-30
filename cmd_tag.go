@@ -17,28 +17,23 @@ func (a *app) tag(args []string) int {
 	var words []string
 	var session string
 	clear := false
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--clear":
+	p := a.args("tag", args)
+	for arg, ok := p.next(); ok; arg, ok = p.next() {
+		switch {
+		case arg == "--clear":
 			clear = true
-		case "--session":
-			if i+1 >= len(args) {
-				fmt.Fprintln(a.errw, "bosun tag: --session needs a value")
+		case arg == "--session":
+			if session, ok = p.value(); !ok {
 				return 2
 			}
-			i++
-			session = args[i]
+		case strings.HasPrefix(arg, "-"):
+			return p.unknown()
 		default:
-			if strings.HasPrefix(args[i], "-") {
-				fmt.Fprintf(a.errw, "bosun tag: unexpected argument %q\n", args[i])
-				return 2
-			}
-			words = append(words, args[i])
+			words = append(words, arg)
 		}
 	}
 	if clear == (len(words) > 0) {
-		fmt.Fprintln(a.errw, "usage: bosun tag TEXT [--session ID] | bosun tag --clear [--session ID]")
-		return 2
+		return p.usage("bosun tag TEXT [--session ID] | bosun tag --clear [--session ID]")
 	}
 	key := ""
 	if !clear {

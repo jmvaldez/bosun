@@ -49,9 +49,12 @@ func (a *app) notifyDispatch(args []string) int {
 }
 
 func (a *app) notifyCmd(args []string) int {
-	if len(args) != 1 || args[0] != "--test" {
-		fmt.Fprintln(a.errw, "usage: bosun notify --test")
-		return 2
+	p := a.args("notify", args)
+	if arg, ok := p.next(); !ok || arg != "--test" {
+		return p.usage("bosun notify --test")
+	}
+	if _, more := p.next(); more {
+		return p.usage("bosun notify --test")
 	}
 	d, why := a.notifyDeps()
 	if d.Notifier == nil {
