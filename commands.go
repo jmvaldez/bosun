@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/jmvaldez/bosun/internal/claude"
 	"github.com/jmvaldez/bosun/internal/config"
 	"github.com/jmvaldez/bosun/internal/eval"
 	"github.com/jmvaldez/bosun/internal/hook"
@@ -95,7 +96,7 @@ func (a *app) loadConfig() config.Config {
 // withIdentity resolves claude once and wires the identity adapter. Only
 // commands off the hot path call it.
 func (a *app) withIdentity(cfg config.Config) {
-	bin, _ := refresh.ResolveClaude(cfg)
+	bin, _ := claude.Resolve(cfg)
 	a.ad.Identity = platform.ClaudeIdentity{Runner: a.ad.Runner, Bin: bin}
 }
 
@@ -133,7 +134,7 @@ func (a *app) install(args []string) int {
 }
 
 func (a *app) applyEnv(cfg config.Config, yes bool) install.Env {
-	claudeBin, _ := refresh.ResolveClaude(cfg)
+	claudeBin, _ := claude.Resolve(cfg)
 	tmuxBin, _ := exec.LookPath("tmux")
 	tty := isTerminal(a.in)
 	// Bold depends on where the output goes, not on where input comes from.

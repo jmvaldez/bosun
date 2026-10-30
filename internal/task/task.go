@@ -45,6 +45,16 @@ func New(keyRegex string, prefixes []string) (*Parser, error) {
 	return &Parser{re: re, prefixes: up}, nil
 }
 
+// FromConfig builds the parser from c, falling back to Default when the
+// configured key regex does not compile.
+func FromConfig(c config.Task) *Parser {
+	p, err := New(c.KeyRegex, c.Prefixes)
+	if err != nil {
+		return Default()
+	}
+	return p
+}
+
 // Default parses with the default pattern and no prefix allowlist. Hooks use it
 // because they never read config.
 func Default() *Parser {

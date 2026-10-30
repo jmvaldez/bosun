@@ -2,6 +2,7 @@ package ledger
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -59,6 +60,14 @@ func ReadIngestMarker(path string) (time.Time, bool) {
 // transaction, so a total never loses spend. Sessions, subagents and rollups
 // are kept forever.
 func (d *DB) Retain(p paths.Paths, now time.Time) (Pruned, error) {
+	out, err := d.retain(p, now)
+	if err != nil {
+		return out, fmt.Errorf("ledger: retain: %w", err)
+	}
+	return out, nil
+}
+
+func (d *DB) retain(p paths.Paths, now time.Time) (Pruned, error) {
 	var out Pruned
 	lastIngest, hasIngest := d.LastIngest()
 

@@ -1,4 +1,4 @@
-package refresh
+package claude
 
 import (
 	"errors"
@@ -54,7 +54,7 @@ func TestParseNamesStripsControlCharacters(t *testing.T) {
 
 func TestNamesFetchesInBackgroundAndCachesForTTL(t *testing.T) {
 	run := &namesRunner{out: `[{"sessionId":"s1","name":"tidy the parser"}]`}
-	n := NewNames(run, "/bin/claude", TTL)
+	n := NewNames(run, "/bin/claude", AgentsTTL)
 	t0 := time.Date(2026, 10, 26, 9, 0, 0, 0, time.UTC)
 	if got := n.Get(t0); got != nil {
 		t.Errorf("first Get blocked on the fetch and returned %q", got)
@@ -66,7 +66,7 @@ func TestNamesFetchesInBackgroundAndCachesForTTL(t *testing.T) {
 	if run.count() != 1 {
 		t.Errorf("fetched %d times inside the TTL, want 1", run.count())
 	}
-	n.Get(t0.Add(TTL + time.Second))
+	n.Get(t0.Add(AgentsTTL + time.Second))
 	for i := 0; i < 400 && run.count() < 2; i++ {
 		time.Sleep(5 * time.Millisecond)
 	}

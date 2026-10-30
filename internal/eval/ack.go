@@ -13,7 +13,7 @@ import (
 // cannot race the evaluator; it waits at most flock.MaxWait. Retracting posted
 // notices is the caller's job.
 func Dismiss(p paths.Paths, id string, all bool) ([]rules.Alert, error) {
-	lock, err := flock.TryLock(p.Locks()+"/eval.lock", flock.MaxWait)
+	lock, err := flock.TryLock(p.Lock("eval"), flock.MaxWait)
 	if errors.Is(err, flock.ErrBusy) {
 		return nil, fmt.Errorf("the evaluator is busy; try again")
 	}
@@ -44,7 +44,7 @@ func findByID(s rules.Store, id string) (*rules.Alert, bool) {
 // DismissSession dismisses every active alert of one session, or, when agent is
 // set, only that subagent's alerts. It is the popup's `x`.
 func DismissSession(p paths.Paths, session, agent string) ([]rules.Alert, error) {
-	lock, err := flock.TryLock(p.Locks()+"/eval.lock", flock.MaxWait)
+	lock, err := flock.TryLock(p.Lock("eval"), flock.MaxWait)
 	if errors.Is(err, flock.ErrBusy) {
 		return nil, fmt.Errorf("the evaluator is busy; try again")
 	}

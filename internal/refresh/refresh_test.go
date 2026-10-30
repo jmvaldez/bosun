@@ -5,13 +5,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/jmvaldez/bosun/internal/claude"
 	"github.com/jmvaldez/bosun/internal/config"
 	"github.com/jmvaldez/bosun/internal/paths"
 	"github.com/jmvaldez/bosun/internal/platform"
@@ -80,51 +80,6 @@ func fixture() string {
 	return strings.ReplaceAll(agentsJSON, "%PID%", strconv.Itoa(os.Getpid()))
 }
 
-func TestParseAgentsRows(t *testing.T) {
-	rows, err := ParseAgents([]byte(fixture()), platform.NewProcs())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) != 5 {
-		t.Fatalf("rows = %d (the traversal-id row must be dropped)", len(rows))
-	}
-	if r := rows[0]; r.Background || r.Status != "busy" || r.PID != os.Getpid() || r.StartTok == "" {
-		t.Errorf("busy row = %+v", r)
-	}
-	if r := rows[1]; r.Status != "waiting" || r.WaitingFor != "permission prompt" {
-		t.Errorf("waiting row = %+v", r)
-	}
-	if r := rows[3]; !r.Background || r.PID != 0 || r.State != "blocked" || r.ID != "2cd7bf42" || r.Status != "" {
-		t.Errorf("background row = %+v", r)
-	}
-}
-
-func TestLiveAndIdleSignalForBackgroundRows(t *testing.T) {
-	rows, _ := ParseAgents([]byte(fixture()), platform.NewProcs())
-	procs := platform.NewProcs()
-	if !rows[0].Live(procs) {
-		t.Error("pid row for this process should be live")
-	}
-	dead := rows[0]
-	dead.StartTok += "9"
-	if dead.Live(procs) {
-		t.Error("start token mismatch must read as dead (pid reuse)")
-	}
-	if !rows[3].Live(procs) {
-		t.Error("blocked background row is live (no kill -0 for it)")
-	}
-	if rows[4].Live(procs) {
-		t.Error("done background row is not live")
-	}
-	if !rows[2].IdleSignal() {
-		t.Error("idle pid row should signal idle")
-	}
-	bgIdleish := Row{Background: true, State: "done", Status: "idle"}
-	if bgIdleish.IdleSignal() {
-		t.Error("background rows never give the idle-over-working signal")
-	}
-}
-
 func TestRunWritesCacheWithoutPromptDerivedText(t *testing.T) {
 	ad, run, id, cfg := setup(t)
 	run.out = []byte(fixture())
@@ -145,14 +100,14 @@ func TestRunWritesCacheWithoutPromptDerivedText(t *testing.T) {
 	if strings.Contains(string(b), "SENTINEL") {
 		t.Errorf("name leaked into the cache: %s", b)
 	}
-	c, stale := ReadCache(ad.Paths.AgentsCache(), ad.Clock.Now().Add(time.Second), TTL)
+	c, stale := claude.ReadAgents(ad.Paths.AgentsCache(), ad.Clock.Now().Add(time.Second), claude.AgentsTTL)
 	if stale || len(c.Rows) != 5 {
 		t.Errorf("stale=%v rows=%d", stale, len(c.Rows))
 	}
-	if _, stale := ReadCache(ad.Paths.AgentsCache(), ad.Clock.Now().Add(6*time.Second), TTL); !stale {
+	if _, stale := claude.ReadAgents(ad.Paths.AgentsCache(), ad.Clock.Now().Add(6*time.Second), claude.AgentsTTL); !stale {
 		t.Error("cache should be stale after the TTL")
 	}
-	if got, ok := ReadIdentity(ad.Paths.Identity()); !ok || got.AccountKey != "me@example.com" {
+	if got, ok := claude.ReadIdentity(ad.Paths.Identity()); !ok || got.AccountKey != "me@example.com" {
 		t.Errorf("identity = %+v ok=%v", got, ok)
 	}
 	if id.calls != 1 {
@@ -207,59 +162,5 @@ func TestSecondRefreshDedupesOnLock(t *testing.T) {
 	}
 	if len(run.calls) != 0 {
 		t.Error("a refresh ran while another held the lock")
-	}
-}
-
-func TestMissingCacheIsStale(t *testing.T) {
-	c, stale := ReadCache(filepath.Join(t.TempDir(), "nope.json"), time.Now(), TTL)
-	if !stale || len(c.Rows) != 0 {
-		t.Error("missing cache must read as stale and empty")
-	}
-}
-
-func TestResolveClaudeFromPath(t *testing.T) {
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "claude")
-	os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755)
-	t.Setenv("PATH", dir)
-	got, err := ResolveClaude(config.Default())
-	if err != nil || got != bin {
-		t.Fatalf("got %q err %v", got, err)
-	}
-	t.Setenv("PATH", t.TempDir())
-	if _, err := ResolveClaude(config.Default()); err == nil {
-		t.Error("want error when claude is absent")
-	}
-}
-
-// The captured `claude agents --json` (redacted) has one pid row and two
-// background rows without pid or status.
-func TestParseCapturedAgentsFixture(t *testing.T) {
-	b, err := os.ReadFile("../../testdata/agents-json.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Placeholder ids are rightly rejected as session ids; swap in valid ones.
-	b = regexp.MustCompile(`<(session-\d+)>`).ReplaceAll(b, []byte("$1"))
-	rows, err := ParseAgents(b, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var pidRows, bg int
-	for _, r := range rows {
-		if r.Background {
-			bg++
-			if r.PID != 0 || r.Status != "" || r.State == "" {
-				t.Errorf("background row = %+v", r)
-			}
-		} else {
-			pidRows++
-			if r.PID == 0 || r.Status == "" {
-				t.Errorf("pid row = %+v", r)
-			}
-		}
-	}
-	if pidRows != 1 || bg != 2 {
-		t.Errorf("pid rows = %d, background = %d", pidRows, bg)
 	}
 }

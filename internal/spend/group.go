@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/jmvaldez/bosun/internal/paths"
 )
 
 // Groupings, as `spend --by` accepts them.
@@ -45,13 +47,6 @@ func IsGrouping(by string) bool {
 	return false
 }
 
-func short(id string) string {
-	if len(id) > 8 {
-		return id[:8]
-	}
-	return id
-}
-
 // key names the group a contribution falls into.
 func key(by string, c Contribution, clock Clock) string {
 	s := c.Session
@@ -81,26 +76,26 @@ func key(by string, c Contribution, clock Clock) string {
 	case "prompt":
 		switch {
 		case c.Kind == Unattributed:
-			return short(s.ID) + " unattributed"
+			return paths.ShortID(s.ID) + " unattributed"
 		case c.PromptN > 0:
-			return fmt.Sprintf("%s prompt #%d", short(s.ID), c.PromptN)
+			return fmt.Sprintf("%s prompt #%d", paths.ShortID(s.ID), c.PromptN)
 		}
-		return short(s.ID) + " no prompt"
+		return paths.ShortID(s.ID) + " no prompt"
 	case "request":
 		if c.Kind == Unattributed {
-			return short(s.ID) + " unattributed"
+			return paths.ShortID(s.ID) + " unattributed"
 		}
 		return c.Req.MessageID + "/" + c.Req.RequestID
 	case "subagent":
 		switch {
 		case c.Kind == Unattributed && c.Req.AgentID == "":
-			return short(s.ID) + " unattributed"
+			return paths.ShortID(s.ID) + " unattributed"
 		case c.Req.AgentID == "":
-			return short(s.ID) + " main"
+			return paths.ShortID(s.ID) + " main"
 		case c.AgentType != "":
-			return fmt.Sprintf("%s %s#%s", short(s.ID), c.AgentType, c.Req.AgentID)
+			return fmt.Sprintf("%s %s#%s", paths.ShortID(s.ID), c.AgentType, c.Req.AgentID)
 		}
-		return fmt.Sprintf("%s subagent#%s", short(s.ID), c.Req.AgentID)
+		return fmt.Sprintf("%s subagent#%s", paths.ShortID(s.ID), c.Req.AgentID)
 	}
 	return ""
 }

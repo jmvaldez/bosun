@@ -90,15 +90,6 @@ func runUnderShell(t *testing.T, orig, in, want string) {
 	}
 }
 
-func TestShellQuoteRoundTrips(t *testing.T) {
-	for _, s := range []string{`it's`, `a"b`, `$HOME && rm`, "line\nbreak", "", "/home/me/my repo", "a;b", "a*b", "~/x", "a\tb", "a|b", "a`b`", "#c", "a\\b"} {
-		out, err := exec.Command("/bin/sh", "-c", "printf %s "+shellQuote(s)).Output()
-		if err != nil || string(out) != s {
-			t.Errorf("%q round-tripped to %q (%v)", s, out, err)
-		}
-	}
-}
-
 func TestInstallWritesOnlyOwnedFilesAndPrintsEdits(t *testing.T) {
 	ad, root := setup(t)
 	settings := writeSettings(t, ad, `{"statusLine":{"type":"command","command":"jq -r .model.id"},"permissions":{}}`)

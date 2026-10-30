@@ -66,8 +66,24 @@ func (p Paths) Session(id string) string { return join(p.State, "sessions", id) 
 // Tag is the task set by `bosun tag`.
 func (p Paths) Tag(id string) string { return join(p.State, "sessions", id, "tag") }
 
+// Events is one session's append-only hook event log.
+func (p Paths) Events(id string) string { return join(p.State, "sessions", id, "events.jsonl") }
+
+// StatuslineSnap is one session's status line snapshot.
+func (p Paths) StatuslineSnap(id string) string {
+	return join(p.State, "sessions", id, "statusline.json")
+}
+
+// StatuslineLock serialises writers of one session's status line snapshot.
+func (p Paths) StatuslineLock(id string) string {
+	return join(p.State, "sessions", id, "statusline.lock")
+}
+
 // Locks is the dir holding every lock file.
 func (p Paths) Locks() string { return join(p.State, "locks") }
+
+// Lock is the lock file called name, under Locks.
+func (p Paths) Lock(name string) string { return join(p.State, "locks", name+".lock") }
 
 // Identity is the cached account key.
 func (p Paths) Identity() string { return join(p.State, "identity.json") }
@@ -134,6 +150,14 @@ func ValidSessionID(id string) bool {
 		}
 	}
 	return true
+}
+
+// ShortID is the first 8 characters of a session id, for display.
+func ShortID(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
 }
 
 func isAlnum(c byte) bool {

@@ -187,7 +187,7 @@ func (f *fakeRunner) Run(timeout time.Duration, name string, args ...string) ([]
 func TestGDBusPostReplaceRetractArgv(t *testing.T) {
 	fr := &fakeRunner{out: map[string]string{"Notify": "(uint32 42,)\n"}}
 	g := GDBus{R: fr, Bin: "/usr/bin/gdbus"}
-	id, err := g.Post(platform.Notice{Title: "acme/api ABC-1", Subtitle: "needs you", Body: "waiting on you: dialog", Sound: true, ReplaceID: 7})
+	id, err := g.Post(Notice{Title: "acme/api ABC-1", Subtitle: "needs you", Body: "waiting on you: dialog", Sound: true, ReplaceID: 7})
 	if err != nil || id != 42 {
 		t.Fatalf("id=%d err=%v", id, err)
 	}
@@ -208,11 +208,11 @@ func TestGDBusPostReplaceRetractArgv(t *testing.T) {
 		t.Errorf("close argv = %s", last)
 	}
 	// Quotes in text cannot break out of the GVariant string.
-	g.Post(platform.Notice{Title: "it's", Body: "a\\b"})
+	g.Post(Notice{Title: "it's", Body: "a\\b"})
 	if last := strings.Join(fr.calls[2], "|"); !strings.Contains(last, `'it\'s'`) || !strings.Contains(last, `'a\\b'`) {
 		t.Errorf("escaping: %s", last)
 	}
-	if _, err := (GDBus{R: &fakeRunner{out: map[string]string{"Notify": "weird"}}}).Post(platform.Notice{}); err == nil {
+	if _, err := (GDBus{R: &fakeRunner{out: map[string]string{"Notify": "weird"}}}).Post(Notice{}); err == nil {
 		t.Error("an unparseable reply must be an error")
 	}
 	if c := g.Capabilities(); !c.Replace || !c.Retract || !c.Sound {
@@ -223,7 +223,7 @@ func TestGDBusPostReplaceRetractArgv(t *testing.T) {
 func TestNotifySendNeedsPrintIDForReplace(t *testing.T) {
 	fr := &fakeRunner{out: map[string]string{"--print-id": "9\n"}}
 	ns := NotifySend{R: fr, Bin: "notify-send", PrintID: true}
-	id, err := ns.Post(platform.Notice{Title: "t", Body: "b", ReplaceID: 5})
+	id, err := ns.Post(Notice{Title: "t", Body: "b", ReplaceID: 5})
 	if err != nil || id != 9 {
 		t.Fatalf("id=%d err=%v", id, err)
 	}
@@ -234,7 +234,7 @@ func TestNotifySendNeedsPrintIDForReplace(t *testing.T) {
 	if c := old.Capabilities(); c.Replace || c.Retract {
 		t.Errorf("0.7 caps = %+v", c)
 	}
-	if id, err := old.Post(platform.Notice{Title: "t", ReplaceID: 5}); err != nil || id != 0 {
+	if id, err := old.Post(Notice{Title: "t", ReplaceID: 5}); err != nil || id != 0 {
 		t.Errorf("id=%d err=%v", id, err)
 	}
 }
@@ -285,7 +285,7 @@ func TestResolve(t *testing.T) {
 func TestTerminalNotifierArgv(t *testing.T) {
 	fr := &fakeRunner{}
 	tn := TerminalNotifier{R: fr, Bin: "terminal-notifier"}
-	tn.Post(platform.Notice{Title: "t", Subtitle: "s", Body: "b", Group: "bosun.s1.attn", Sound: true})
+	tn.Post(Notice{Title: "t", Subtitle: "s", Body: "b", Group: "bosun.s1.attn", Sound: true})
 	tn.Retract(0, "bosun.s1.attn")
 	if got := strings.Join(fr.calls[0], " "); got != "terminal-notifier -title t -message b -group bosun.s1.attn -subtitle s -sound default" {
 		t.Errorf("post = %s", got)
@@ -299,17 +299,17 @@ func TestTerminalNotifierArgv(t *testing.T) {
 
 type fakeNotifier struct {
 	mu     sync.Mutex
-	posts  []platform.Notice
+	posts  []Notice
 	closed []uint32
 	next   uint32
 	block  chan struct{} // when set, Post waits on it
 }
 
 func (f *fakeNotifier) Name() string { return "fake" }
-func (f *fakeNotifier) Capabilities() platform.Capabilities {
-	return platform.Capabilities{Replace: true, Retract: true, Sound: true}
+func (f *fakeNotifier) Capabilities() Capabilities {
+	return Capabilities{Replace: true, Retract: true, Sound: true}
 }
-func (f *fakeNotifier) Post(n platform.Notice) (uint32, error) {
+func (f *fakeNotifier) Post(n Notice) (uint32, error) {
 	if f.block != nil {
 		<-f.block
 	}
@@ -833,7 +833,7 @@ func TestNoticesMatchTheMock(t *testing.T) {
 }
 
 func TestSecondLineIsItalicOnlyWithBodyMarkup(t *testing.T) {
-	n := platform.Notice{Body: "a < b", Line2: "x & y"}
+	n := Notice{Body: "a < b", Line2: "x & y"}
 	if got := bodyOf(n); got != "a < b\nx & y" {
 		t.Errorf("plain = %q", got)
 	}
@@ -846,7 +846,7 @@ func TestSecondLineIsItalicOnlyWithBodyMarkup(t *testing.T) {
 func TestSingleLineBodyIsEscapedWithBodyMarkup(t *testing.T) {
 	const raw = `<a href="x">y</a> & z`
 	const esc = `&lt;a href="x"&gt;y&lt;/a&gt; &amp; z`
-	n := platform.Notice{Title: "t", Subtitle: "<b>s</b>", Body: raw}
+	n := Notice{Title: "t", Subtitle: "<b>s</b>", Body: raw}
 	if got := bodyOf(n); got != raw {
 		t.Errorf("markup off: %q", got)
 	}
@@ -880,7 +880,7 @@ func TestSingleLineBodyIsEscapedWithBodyMarkup(t *testing.T) {
 
 func TestNotifySendEscapesBothLinesWithoutItalics(t *testing.T) {
 	fr := &fakeRunner{}
-	n := platform.Notice{Title: "t", Body: "a<b", Line2: "x&y", Markup: true}
+	n := Notice{Title: "t", Body: "a<b", Line2: "x&y", Markup: true}
 	if _, err := (NotifySend{R: fr, Bin: "notify-send"}).Post(n); err != nil {
 		t.Fatal(err)
 	}

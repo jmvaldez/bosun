@@ -1,4 +1,6 @@
-package refresh
+// Package claude reads what bosun learns from the claude CLI: where the binary
+// is, the agents cache, session names and the cached account identity.
+package claude
 
 import (
 	"encoding/json"
@@ -10,12 +12,12 @@ import (
 	"github.com/jmvaldez/bosun/internal/platform"
 )
 
-// TTL is how long the agents cache stays fresh.
-const TTL = 5 * time.Second
+// AgentsTTL is how long the agents cache stays fresh.
+const AgentsTTL = 5 * time.Second
 
-// Row is one entry of `claude agents --json` reduced to what bosun uses. The
+// Agent is one entry of `claude agents --json` reduced to what bosun uses. The
 // raw `name` field is derived from prompt text and is never decoded.
-type Row struct {
+type Agent struct {
 	SessionID string `json:"session_id"`
 	PID       int    `json:"pid,omitempty"`
 	// StartTok pins PID to one process lifetime. It is taken when the row is
@@ -26,18 +28,18 @@ type Row struct {
 	StartedAt  int64  `json:"started_at,omitempty"` // ms since epoch
 	Status     string `json:"status,omitempty"`     // busy | waiting | idle (pid rows)
 	WaitingFor string `json:"waiting_for,omitempty"`
-	// Background rows have no pid and no status (FACTS-CHECK F5); Row.Live
+	// Background rows have no pid and no status (FACTS-CHECK F5); Agent.Live
 	// says how their liveness is judged (D-11).
 	Background bool   `json:"background,omitempty"`
 	ID         string `json:"id,omitempty"`
 	State      string `json:"state,omitempty"` // working | blocked | done | failed | stopped
 }
 
-// Cache is the content of agents.json.
-type Cache struct {
+// AgentsCache is the content of agents.json.
+type AgentsCache struct {
 	V         int       `json:"v"`
 	FetchedAt time.Time `json:"fetched_at"`
-	Rows      []Row     `json:"rows"`
+	Rows      []Agent   `json:"rows"`
 }
 
 // rawRow lists only the keys bosun decodes.
@@ -55,14 +57,14 @@ type rawRow struct {
 
 // ParseAgents decodes the output of `claude agents --json`. procs, when
 // non-nil, supplies start tokens for pid rows.
-func ParseAgents(out []byte, procs platform.Procs) ([]Row, error) {
+func ParseAgents(out []byte, procs platform.Procs) ([]Agent, error) {
 	var raw []rawRow
 	if err := json.Unmarshal(out, &raw); err != nil {
 		return nil, fmt.Errorf("agents --json: %w", err)
 	}
-	rows := make([]Row, 0, len(raw))
+	rows := make([]Agent, 0, len(raw))
 	for _, r := range raw {
-		row := Row{
+		row := Agent{
 			SessionID: clean.Ident(r.SessionID, 64),
 			Kind:      clean.Ident(r.Kind, 32),
 			Cwd:       r.Cwd,
@@ -96,7 +98,7 @@ func ParseAgents(out []byte, procs platform.Procs) ([]Row, error) {
 // Live reports whether the row's agent session is still running. Background
 // rows have no process to probe, so only their state counts; pid rows are
 // checked with kill -0 plus the start token.
-func (r Row) Live(procs platform.Procs) bool {
+func (r Agent) Live(procs platform.Procs) bool {
 	if r.Background {
 		return r.State == "working" || r.State == "blocked"
 	}
@@ -106,20 +108,20 @@ func (r Row) Live(procs platform.Procs) bool {
 // IdleSignal reports whether the row says the agent is idle, which is what
 // lets an evaluator drop a stale `working` state. Background rows never
 // qualify: their `done` is a task outcome, not an idle prompt (D-11).
-func (r Row) IdleSignal() bool {
+func (r Agent) IdleSignal() bool {
 	return !r.Background && r.Status == "idle"
 }
 
-// ReadCache loads the cache and reports whether it is older than ttl. A missing
+// ReadAgents loads the cache and reports whether it is older than ttl. A missing
 // or unreadable cache is stale and empty, never an error, so callers simply
 // spawn a refresh.
-func ReadCache(path string, now time.Time, ttl time.Duration) (c Cache, stale bool) {
+func ReadAgents(path string, now time.Time, ttl time.Duration) (c AgentsCache, stale bool) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return Cache{}, true
+		return AgentsCache{}, true
 	}
 	if json.Unmarshal(b, &c) != nil {
-		return Cache{}, true
+		return AgentsCache{}, true
 	}
 	return c, now.Sub(c.FetchedAt) > ttl
 }

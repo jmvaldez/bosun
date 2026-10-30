@@ -17,10 +17,11 @@ import (
 	"strings"
 
 	"github.com/jmvaldez/bosun/internal/atomicfile"
+	"github.com/jmvaldez/bosun/internal/claude"
 	"github.com/jmvaldez/bosun/internal/config"
 	"github.com/jmvaldez/bosun/internal/platform"
 	"github.com/jmvaldez/bosun/internal/plugstate"
-	"github.com/jmvaldez/bosun/internal/refresh"
+	"github.com/jmvaldez/bosun/internal/shell"
 	"github.com/jmvaldez/bosun/internal/tmuxconf"
 )
 
@@ -110,7 +111,7 @@ func writeOwnedFiles(ad platform.Adapters, opt *Options, code *int) []string {
 		if err != nil {
 			// Not fatal: the detached refresher retries on its next run.
 			lines = append(lines, fmt.Sprintf("skipped identity.json (%v); `bosun refresh` retries it", err))
-		} else if err := refresh.WriteIdentity(idPath, key, ad.Clock.Now()); err != nil {
+		} else if err := claude.WriteIdentity(idPath, key, ad.Clock.Now()); err != nil {
 			fail("%s: %v", idPath, err)
 		} else {
 			lines = append(lines, "wrote   "+idPath)
@@ -181,7 +182,7 @@ func printPlugin(out io.Writer, opt Options) {
 		repo = "<path to the bosun repo>"
 	}
 	fmt.Fprintln(out, "2. Claude Code plugin (registers the 13 hooks)")
-	fmt.Fprintf(out, "   claude plugin marketplace add %s\n", shellQuote(repo))
+	fmt.Fprintf(out, "   claude plugin marketplace add %s\n", shell.QuoteWord(repo))
 	fmt.Fprintln(out, "   claude plugin install bosun@bosun")
 	fmt.Fprintln(out, "   Do not also register bosun hooks in settings.json; they would fire twice.")
 	fmt.Fprintln(out)
@@ -267,30 +268,7 @@ func WrapCommand(orig string) string {
 // isPlain reports whether s is only characters a shell passes through as
 // literals or as word breaks between literals.
 func isPlain(s string) bool {
-	return isWord(strings.ReplaceAll(s, " ", "_"))
-}
-
-// isWord reports whether s is a single shell word with nothing to split or
-// expand. A space is plain for WrapCommand's pass-through but not here: an
-// unquoted path with a space is two arguments.
-func isWord(s string) bool {
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-		case strings.ContainsRune("_./-=:,@+", r):
-		default:
-			return false
-		}
-	}
-	return true
-}
-
-// shellQuote single-quotes s for a POSIX shell unless it is already one word.
-func shellQuote(s string) string {
-	if s != "" && isWord(s) {
-		return s
-	}
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+	return shell.IsWord(strings.ReplaceAll(s, " ", "_"))
 }
 
 // findRepo looks upward from each dir for the marketplace manifest that marks

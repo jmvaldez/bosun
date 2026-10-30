@@ -7,10 +7,10 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"github.com/jmvaldez/bosun/internal/claude"
 	"github.com/jmvaldez/bosun/internal/config"
 	"github.com/jmvaldez/bosun/internal/doctor"
 	"github.com/jmvaldez/bosun/internal/install"
-	"github.com/jmvaldez/bosun/internal/refresh"
 	"github.com/jmvaldez/bosun/internal/tmux"
 	"github.com/jmvaldez/bosun/internal/uninstall"
 )
@@ -50,7 +50,7 @@ func (a *app) doctorChecks() []doctor.Check {
 	cfg, res, cerr := config.Load(a.ad.Paths.ConfigFile())
 	exe, _ := os.Executable()
 	tmuxBin, _ := exec.LookPath("tmux")
-	claudeBin, _ := refresh.ResolveClaude(cfg)
+	claudeBin, _ := claude.Resolve(cfg)
 	env := doctor.Env{
 		Paths: a.ad.Paths, Version: version, Kind: a.ad.Kind, Now: a.ad.Clock.Now(), Getenv: a.ad.Getenv,
 		Runner: a.ad.Runner, Procs: a.ad.Procs, Executable: exe, LookPath: exec.LookPath,

@@ -10,7 +10,7 @@ import (
 )
 
 // ClaudeIdentity asks the claude binary who is logged in. Bin comes from
-// refresh.ResolveClaude; empty means claude was not found.
+// claude.Resolve; empty means claude was not found.
 type ClaudeIdentity struct {
 	Runner runner.Runner
 	Bin    string

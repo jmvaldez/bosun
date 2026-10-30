@@ -8,41 +8,23 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
-	"time"
 
 	"github.com/jmvaldez/bosun/internal/atomicfile"
+	"github.com/jmvaldez/bosun/internal/claude"
 	"github.com/jmvaldez/bosun/internal/config"
 	"github.com/jmvaldez/bosun/internal/flock"
 	"github.com/jmvaldez/bosun/internal/platform"
 )
 
-const agentsTimeout = 5 * time.Second
-
-var errNoClaude = errors.New("claude binary not found")
-
-// ResolveClaude returns claude.bin verbatim when set, else claude's path from
-// PATH.
-func ResolveClaude(cfg config.Config) (string, error) {
-	if cfg.Claude.Bin != "" {
-		return cfg.Claude.Bin, nil
-	}
-	p, err := exec.LookPath("claude")
-	if err != nil {
-		return "", errNoClaude
-	}
-	return p, nil
-}
-
 // Run refreshes the agents cache, the identity when it is missing or older
-// than IdentityTTL, and spend (refreshSpend). Concurrent refreshes dedupe on
+// than claude.IdentityTTL, and spend (refreshSpend). Concurrent refreshes dedupe on
 // refresh.lock: a second one exits quietly. It returns the process exit code.
 func Run(ad platform.Adapters, cfg config.Config, out, errw io.Writer) int {
 	if ad.Paths.State == "" || ad.Paths.Cache == "" {
 		fmt.Fprintln(errw, "bosun refresh: no state or cache dir (HOME unset?)")
 		return 1
 	}
-	lock, err := flock.TryLock(ad.Paths.Locks()+"/refresh.lock", 0)
+	lock, err := flock.TryLock(ad.Paths.Lock("refresh"), 0)
 	if errors.Is(err, flock.ErrBusy) {
 		return 0
 	}
@@ -55,7 +37,7 @@ func Run(ad platform.Adapters, cfg config.Config, out, errw io.Writer) int {
 	// Spend works from files alone, so a missing claude binary only costs the
 	// agents cache and identity, not today's total.
 	code := 0
-	if bin, err := ResolveClaude(cfg); err != nil {
+	if bin, err := claude.Resolve(cfg); err != nil {
 		fmt.Fprintf(errw, "bosun refresh: %v\n", err)
 		code = 1
 	} else {
@@ -76,16 +58,16 @@ func Run(ad platform.Adapters, cfg config.Config, out, errw io.Writer) int {
 }
 
 func refreshAgents(ad platform.Adapters, bin string, out io.Writer) error {
-	b, err := ad.Runner.Run(agentsTimeout, bin, "agents", "--json")
+	b, err := ad.Runner.Run(claude.AgentsTimeout, bin, "agents", "--json")
 	if err != nil {
 		// Leave the old cache in place: it ages out and the next tick retries.
 		return fmt.Errorf("claude agents: %w", err)
 	}
-	rows, err := ParseAgents(b, ad.Procs)
+	rows, err := claude.ParseAgents(b, ad.Procs)
 	if err != nil {
 		return err
 	}
-	data, err := json.Marshal(Cache{V: 1, FetchedAt: ad.Clock.Now().UTC(), Rows: rows})
+	data, err := json.Marshal(claude.AgentsCache{V: 1, FetchedAt: ad.Clock.Now().UTC(), Rows: rows})
 	if err != nil {
 		return err
 	}
@@ -98,7 +80,7 @@ func refreshAgents(ad platform.Adapters, bin string, out io.Writer) error {
 
 func refreshIdentity(ad platform.Adapters, out io.Writer) error {
 	now := ad.Clock.Now()
-	if id, ok := ReadIdentity(ad.Paths.Identity()); ok && now.Sub(id.FetchedAt) < IdentityTTL {
+	if id, ok := claude.ReadIdentity(ad.Paths.Identity()); ok && now.Sub(id.FetchedAt) < claude.IdentityTTL {
 		return nil
 	}
 	if ad.Identity == nil {
@@ -108,7 +90,7 @@ func refreshIdentity(ad platform.Adapters, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if err := WriteIdentity(ad.Paths.Identity(), key, now); err != nil {
+	if err := claude.WriteIdentity(ad.Paths.Identity(), key, now); err != nil {
 		return err
 	}
 	fmt.Fprintln(out, "identity: cached")

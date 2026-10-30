@@ -35,15 +35,11 @@ type stateFacts struct {
 
 func readStateFacts(p paths.Paths, id string) stateFacts {
 	var f stateFacts
-	dir := p.Session(id)
-	f.tag = task.ReadTag(dir + "/tag")
-	if b, err := os.ReadFile(dir + "/statusline.json"); err == nil {
-		var s statusline.Snapshot
-		if json.Unmarshal(b, &s) == nil && s.SessionID == id {
-			f.snap = &s
-		}
+	f.tag = task.ReadTag(p.Tag(id))
+	if s, ok := statusline.ReadSnapshot(p.StatuslineSnap(id)); ok && s.SessionID == id {
+		f.snap = &s
 	}
-	fh, err := os.Open(dir + "/events.jsonl")
+	fh, err := os.Open(p.Events(id))
 	if err != nil {
 		return f
 	}
@@ -176,7 +172,7 @@ func (d *DB) finalizeSession(id string, o IngestOpts) error {
 	}
 
 	started := minNonZero(cur.started, ms(facts.started))
-	last := maxInt(cur.last, ms(facts.lastEvent))
+	last := max(cur.last, ms(facts.lastEvent))
 
 	live := o.IsLive != nil && o.IsLive(id)
 	ended := ms(facts.endedAt)
@@ -321,13 +317,6 @@ func boolInt(b bool) int {
 		return 1
 	}
 	return 0
-}
-
-func maxInt(a, b int64) int64 {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func minNonZero(a, b int64) int64 {

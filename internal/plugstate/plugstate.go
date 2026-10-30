@@ -27,6 +27,7 @@ func Installed(claudeDir, id string) bool {
 	return ok
 }
 
+// MarketplaceAdded reports whether name is in known_marketplaces.json.
 func MarketplaceAdded(claudeDir, name string) bool {
 	b, err := os.ReadFile(filepath.Join(claudeDir, "plugins", "known_marketplaces.json"))
 	if err != nil {

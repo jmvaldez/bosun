@@ -33,9 +33,9 @@ const (
 
 func (GDBus) Name() string { return "gdbus" }
 
-func (GDBus) Capabilities() platform.Capabilities {
+func (GDBus) Capabilities() Capabilities {
 	// A click is a signal the short-lived `notify-click` child listens for.
-	return platform.Capabilities{Sound: true, Replace: true, Retract: true, Click: true}
+	return Capabilities{Sound: true, Replace: true, Retract: true, Click: true}
 }
 
 // ServerCaps reports whether the notification server advertises "actions" (a
@@ -47,11 +47,6 @@ func (g GDBus) ServerCaps() (actions, markup bool) {
 		return false, false
 	}
 	return strings.Contains(string(out), "'actions'"), strings.Contains(string(out), "'body-markup'")
-}
-
-func (g GDBus) ServerActions() bool {
-	a, _ := g.ServerCaps()
-	return a
 }
 
 // markupEscaper escapes the three characters a freedesktop server parses as
@@ -71,7 +66,7 @@ func escapeIf(markup bool, s string) string {
 // bodyOf joins the two lines. With markup the second is italic (GNOME Shell and
 // the notification spec allow <i>, not <span>); the text of either is escaped,
 // the body too when there is no second line.
-func bodyOf(n platform.Notice) string {
+func bodyOf(n Notice) string {
 	if n.Line2 == "" {
 		return escapeIf(n.Markup, n.Body)
 	}
@@ -89,7 +84,7 @@ func variantString(s string) string {
 	return "'" + r.Replace(s) + "'"
 }
 
-func (g GDBus) Post(n platform.Notice) (uint32, error) {
+func (g GDBus) Post(n Notice) (uint32, error) {
 	hints, actions := "{}", "[]"
 	if n.Action != "" {
 		actions = "['default', " + variantString(n.Action) + "]"
@@ -141,11 +136,11 @@ type NotifySend struct {
 
 func (NotifySend) Name() string { return "notify-send" }
 
-func (n NotifySend) Capabilities() platform.Capabilities {
-	return platform.Capabilities{Sound: true, Replace: n.PrintID, Retract: n.PrintID && n.Closer != nil}
+func (n NotifySend) Capabilities() Capabilities {
+	return Capabilities{Sound: true, Replace: n.PrintID, Retract: n.PrintID && n.Closer != nil}
 }
 
-func (n NotifySend) Post(m platform.Notice) (uint32, error) {
+func (n NotifySend) Post(m Notice) (uint32, error) {
 	args := []string{"-a", "bosun"}
 	if n.PrintID {
 		args = append(args, "--print-id")
@@ -216,11 +211,11 @@ type TerminalNotifier struct {
 }
 
 func (TerminalNotifier) Name() string { return "terminal-notifier" }
-func (TerminalNotifier) Capabilities() platform.Capabilities {
-	return platform.Capabilities{Sound: true, Replace: true, Retract: true}
+func (TerminalNotifier) Capabilities() Capabilities {
+	return Capabilities{Sound: true, Replace: true, Retract: true}
 }
 
-func (t TerminalNotifier) Post(n platform.Notice) (uint32, error) {
+func (t TerminalNotifier) Post(n Notice) (uint32, error) {
 	n.Markup = false // terminal-notifier does not parse markup, so nothing to escape
 	args := []string{"-title", n.Title, "-message", bodyOf(n), "-group", n.Group}
 	if n.Subtitle != "" {
@@ -245,10 +240,10 @@ type Osascript struct {
 	Bin string
 }
 
-func (Osascript) Name() string                        { return "osascript" }
-func (Osascript) Capabilities() platform.Capabilities { return platform.Capabilities{Sound: true} }
+func (Osascript) Name() string               { return "osascript" }
+func (Osascript) Capabilities() Capabilities { return Capabilities{Sound: true} }
 
-func (o Osascript) Post(n platform.Notice) (uint32, error) {
+func (o Osascript) Post(n Notice) (uint32, error) {
 	q := func(s string) string { return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s) + `"` }
 	n.Markup = false // osascript does not parse markup, so nothing to escape
 	script := "display notification " + q(bodyOf(n)) + " with title " + q(n.Title) + " subtitle " + q(n.Subtitle)
@@ -261,7 +256,7 @@ func (Osascript) Retract(uint32, string) error { return nil }
 // Resolve picks the backend for notify.backend. A nil Notifier with a reason
 // means notifications are off and says how to turn them on; every other surface
 // keeps working. "auto" never picks osascript.
-func Resolve(backend string, kind platform.Kind, look func(string) (string, error), r runner.Runner) (platform.Notifier, string) {
+func Resolve(backend string, kind platform.Kind, look func(string) (string, error), r runner.Runner) (Notifier, string) {
 	if look == nil {
 		look = exec.LookPath
 	}
@@ -305,7 +300,7 @@ func Resolve(backend string, kind platform.Kind, look func(string) (string, erro
 	return nil, "no notification backend for this platform"
 }
 
-func linuxNotifier(find func(...string) string, r runner.Runner, preferNotifySend bool) (platform.Notifier, string) {
+func linuxNotifier(find func(...string) string, r runner.Runner, preferNotifySend bool) (Notifier, string) {
 	gdbus, send := find("gdbus"), find("notify-send")
 	if gdbus != "" && !preferNotifySend {
 		return GDBus{R: r, Bin: gdbus}, ""

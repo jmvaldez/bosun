@@ -36,7 +36,7 @@ func Record(p paths.Paths, now time.Time, event, pluginVersion string, latency t
 	if p.State == "" {
 		return errors.New("heartbeat: no state dir")
 	}
-	l, err := flock.TryLock(p.Locks()+"/heartbeat.lock", lockWait)
+	l, err := flock.TryLock(p.Lock("heartbeat"), lockWait)
 	if err != nil {
 		return err
 	}

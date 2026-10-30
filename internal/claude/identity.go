@@ -1,4 +1,4 @@
-package refresh
+package claude
 
 import (
 	"encoding/json"
@@ -28,6 +28,7 @@ func ReadIdentity(path string) (IdentityFile, bool) {
 	return id, true
 }
 
+// WriteIdentity caches key as the logged-in account, stamped with now.
 func WriteIdentity(path, key string, now time.Time) error {
 	b, err := json.Marshal(IdentityFile{V: 1, AccountKey: key, FetchedAt: now.UTC()})
 	if err != nil {

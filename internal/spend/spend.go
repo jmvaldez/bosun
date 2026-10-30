@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jmvaldez/bosun/internal/ledger"
+	"github.com/jmvaldez/bosun/internal/plugstate"
 )
 
 // Clock decides where one day ends and the next begins (`spend.day`).
@@ -169,6 +170,18 @@ func Contributions(snap ledger.Snapshot, clock ...Clock) []Contribution {
 		}
 	}
 	return out
+}
+
+// ForDisplay is Contributions with live cost applied: when settings.json's
+// status line is not bosun's wrap, amounts with no trusted figure are redacted
+// (D-31). Every reader of spend goes through it, so the bar, the popup and
+// `bosun spend` agree.
+func ForDisplay(snap ledger.Snapshot, clock Clock, settings string) []Contribution {
+	cs := Contributions(snap, clock)
+	if !plugstate.LiveCost(settings) {
+		cs = Redact(cs)
+	}
+	return cs
 }
 
 // Redact hides every amount with no trusted figure behind it, for when live

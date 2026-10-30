@@ -87,8 +87,7 @@ func record(ad platform.Adapters, raw []byte) {
 	if json.Unmarshal(raw, &v) != nil || v.Cost.Total == nil || !paths.ValidSessionID(v.SessionID) || ad.Paths.State == "" {
 		return
 	}
-	dir := ad.Paths.Session(v.SessionID)
-	lock, err := flock.TryLock(dir+"/statusline.lock", lockWait)
+	lock, err := flock.TryLock(ad.Paths.StatuslineLock(v.SessionID), lockWait)
 	if err != nil {
 		// Busy or unwritable: the next tick (about 300 ms later) carries the
 		// same total, so skipping loses nothing.
@@ -96,10 +95,8 @@ func record(ad platform.Adapters, raw []byte) {
 	}
 	defer lock.Unlock()
 
-	var prev Snapshot
-	if b, err := readFile(dir + "/statusline.json"); err == nil {
-		_ = json.Unmarshal(b, &prev)
-	}
+	snapPath := ad.Paths.StatuslineSnap(v.SessionID)
+	prev, _ := ReadSnapshot(snapPath)
 	now := ad.Clock.Now().UTC().Format(time.RFC3339Nano)
 	max, banked := Bank(prev.MaxUSD, prev.BankedUSD, *v.Cost.Total)
 	snap := Snapshot{
@@ -111,7 +108,7 @@ func record(ad platform.Adapters, raw []byte) {
 		snap.FirstUSD, snap.FirstTS = *v.Cost.Total, now
 	}
 	if b, err := json.Marshal(snap); err == nil {
-		_ = atomicfile.Write(dir+"/statusline.json", b, 0o600)
+		_ = atomicfile.Write(snapPath, b, 0o600)
 	}
 }
 

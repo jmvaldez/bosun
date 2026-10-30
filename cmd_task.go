@@ -8,17 +8,13 @@ import (
 
 	"github.com/jmvaldez/bosun/internal/live"
 	"github.com/jmvaldez/bosun/internal/paths"
+	"github.com/jmvaldez/bosun/internal/shell"
 	"github.com/jmvaldez/bosun/internal/task"
 	"github.com/jmvaldez/bosun/internal/worktree"
 )
 
 func (a *app) parser() *task.Parser {
-	cfg := a.loadConfig()
-	p, err := task.New(cfg.Task.KeyRegex, cfg.Task.Prefixes)
-	if err != nil {
-		return task.Default()
-	}
-	return p
+	return task.FromConfig(a.loadConfig().Task)
 }
 
 // tag sets or clears a session's task. The tag outranks the key the hook found
@@ -94,23 +90,11 @@ func (a *app) tag(args []string) int {
 		return 1
 	}
 	if clear {
-		fmt.Fprintf(a.out, "cleared the tag on %s\n", short(session))
+		fmt.Fprintf(a.out, "cleared the tag on %s\n", paths.ShortID(session))
 	} else {
-		fmt.Fprintf(a.out, "tagged %s %s\n", short(session), key)
+		fmt.Fprintf(a.out, "tagged %s %s\n", paths.ShortID(session), key)
 	}
 	return 0
-}
-
-func short(id string) string {
-	if len(id) > 8 {
-		return id[:8]
-	}
-	return id
-}
-
-// shellQuote single-quotes s for a POSIX shell.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // run opens a tasked Claude Code session in a new tmux window. The command goes
@@ -204,15 +188,15 @@ func (a *app) run(args []string) int {
 	if launcher == "" {
 		launcher = "claude"
 	}
-	inner := "export PATH=" + shellQuote(filepath.Dir(exe)) + ":$PATH; export BOSUN_TASK=" + shellQuote(key) + "; " + launcher
+	inner := "export PATH=" + shell.Quote(filepath.Dir(exe)) + ":$PATH; export BOSUN_TASK=" + shell.Quote(key) + "; " + launcher
 	for _, c := range claudeArgs {
-		inner += " " + shellQuote(c)
+		inner += " " + shell.Quote(c)
 	}
-	shell := a.ad.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/sh"
+	loginShell := a.ad.Getenv("SHELL")
+	if loginShell == "" {
+		loginShell = "/bin/sh"
 	}
-	command := shellQuote(shell) + " -ic " + shellQuote(inner)
+	command := shell.Quote(loginShell) + " -ic " + shell.Quote(inner)
 	if err := tc.NewNamedWindow(dir, key, []string{"BOSUN_TASK=" + key}, command); err != nil {
 		fmt.Fprintf(a.errw, "bosun run: tmux: %v\n", err)
 		return 1

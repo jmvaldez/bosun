@@ -12,13 +12,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jmvaldez/bosun/internal/claude"
 	"github.com/jmvaldez/bosun/internal/config"
 	"github.com/jmvaldez/bosun/internal/flock"
 	"github.com/jmvaldez/bosun/internal/live"
 	"github.com/jmvaldez/bosun/internal/pace"
 	"github.com/jmvaldez/bosun/internal/paths"
 	"github.com/jmvaldez/bosun/internal/platform"
-	"github.com/jmvaldez/bosun/internal/refresh"
 	"github.com/jmvaldez/bosun/internal/rules"
 	"github.com/jmvaldez/bosun/internal/segment"
 	"github.com/jmvaldez/bosun/internal/task"
@@ -110,7 +110,7 @@ func Evaluate(d Deps) Result {
 	if p.State == "" {
 		return Result{}
 	}
-	lock, err := flock.TryLock(p.Locks()+"/eval.lock", 0)
+	lock, err := flock.TryLock(p.Lock("eval"), 0)
 	if err != nil {
 		now := d.Ad.Clock.Now()
 		store := rules.Load(p.Alerts())
@@ -170,7 +170,7 @@ func (d Deps) foldAll(f *live.File, now time.Time) {
 		if !e.IsDir() || !paths.ValidSessionID(id) {
 			continue
 		}
-		evPath := d.Ad.Paths.Session(id) + "/events.jsonl"
+		evPath := d.Ad.Paths.Events(id)
 		fi, err := os.Stat(evPath)
 		if err != nil {
 			continue
@@ -204,9 +204,9 @@ func (d Deps) reconcileLiveness(f *live.File, _ time.Time) {
 // reconcileAgents applies the agents.json cache and spawns a detached refresh
 // when it is stale and someone is watching.
 func (d Deps) reconcileAgents(f *live.File, now time.Time) {
-	cache, stale := refresh.ReadCache(d.Ad.Paths.AgentsCache(), now, refresh.TTL)
+	cache, stale := claude.ReadAgents(d.Ad.Paths.AgentsCache(), now, claude.AgentsTTL)
 	active := false
-	rows := map[string]refresh.Row{}
+	rows := map[string]claude.Agent{}
 	for _, r := range cache.Rows {
 		// A pid row beats a background row with the same session id.
 		if old, ok := rows[r.SessionID]; !ok || old.Background {

@@ -1,4 +1,4 @@
-package refresh
+package claude
 
 import (
 	"encoding/json"
@@ -70,7 +70,7 @@ func (n *Names) Get(now time.Time) map[string]string {
 
 func (n *Names) fetch(started time.Time) {
 	var names map[string]string
-	if b, err := n.run.Run(agentsTimeout, n.bin, "agents", "--json"); err == nil {
+	if b, err := n.run.Run(AgentsTimeout, n.bin, "agents", "--json"); err == nil {
 		names, _ = ParseNames(b)
 	}
 	n.mu.Lock()

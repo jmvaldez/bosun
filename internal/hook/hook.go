@@ -64,7 +64,7 @@ func record(ad platform.Adapters, version string, in io.Reader) {
 	if err != nil {
 		return
 	}
-	if err := appendLine(ad.Paths.Session(p.sessionID), line); err != nil {
+	if err := appendLine(ad.Paths, p.sessionID, line); err != nil {
 		return
 	}
 	spawnDispatch(ad, p)

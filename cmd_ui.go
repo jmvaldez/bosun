@@ -8,12 +8,14 @@ import (
 	"time"
 
 	"github.com/jmvaldez/bosun/internal/atomicfile"
+	"github.com/jmvaldez/bosun/internal/claude"
 	"github.com/jmvaldez/bosun/internal/config"
 	"github.com/jmvaldez/bosun/internal/eval"
 	"github.com/jmvaldez/bosun/internal/ledger"
 	"github.com/jmvaldez/bosun/internal/notify"
 	"github.com/jmvaldez/bosun/internal/peek"
 	"github.com/jmvaldez/bosun/internal/refresh"
+	"github.com/jmvaldez/bosun/internal/shell"
 	"github.com/jmvaldez/bosun/internal/spend"
 	"github.com/jmvaldez/bosun/internal/tmux"
 	"github.com/jmvaldez/bosun/internal/ui"
@@ -37,7 +39,7 @@ type uiSource struct {
 	db           *ledger.DB
 	clock        spend.Clock
 	// names is nil unless privacy.show_text is on and claude resolves (D-27).
-	names  *refresh.Names
+	names  *claude.Names
 	spendC struct {
 		at       time.Time
 		ingested time.Time
@@ -65,7 +67,7 @@ func (s *uiSource) load() ui.Data {
 		}
 		if snap, err := s.db.Load(time.Time{}); err == nil {
 			s.spendC.snap = snap
-			s.spendC.cs = refresh.Contributions(s.a.ad, snap, s.clock)
+			s.spendC.cs = spend.ForDisplay(snap, s.clock, s.a.ad.Paths.ClaudeSettings())
 		}
 		s.spendC.at = now
 	}
@@ -105,7 +107,7 @@ func (u *uiActions) Jump(pane string) error { return u.tc.SwitchClient(u.client,
 func (u *uiActions) Diff(cwd string) error {
 	cmd := u.cfg.UI.DiffCmd
 	if cmd == config.Default().UI.DiffCmd {
-		q := shellQuote(cwd)
+		q := shell.Quote(cwd)
 		cmd = "git -C " + q + " diff --stat --color=always; git -C " + q + " diff --color=always | less -R"
 	}
 	return u.tc.NewWindow(cwd, cmd)
@@ -142,7 +144,7 @@ func (u *uiActions) Export(period, group string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	res, err := spend.Group(spend.Filter(refresh.Contributions(u.a.ad, snap, u.src.clock), since, ""), group, u.src.clock)
+	res, err := spend.Group(spend.Filter(spend.ForDisplay(snap, u.src.clock, u.a.ad.Paths.ClaudeSettings()), since, ""), group, u.src.clock)
 	if err != nil {
 		return "", err
 	}
@@ -246,8 +248,8 @@ func (a *app) ui(args []string) int {
 		}
 	}
 	if cfg.Privacy.ShowText {
-		if bin, err := refresh.ResolveClaude(cfg); err == nil {
-			src.names = refresh.NewNames(a.ad.Runner, bin, refresh.TTL)
+		if bin, err := claude.Resolve(cfg); err == nil {
+			src.names = claude.NewNames(a.ad.Runner, bin, claude.AgentsTTL)
 		}
 	}
 	act := &uiActions{a: a, cfg: cfg, tc: tc, client: client, src: src}

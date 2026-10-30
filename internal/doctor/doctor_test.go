@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jmvaldez/bosun/internal/claude"
 	"github.com/jmvaldez/bosun/internal/config"
 	"github.com/jmvaldez/bosun/internal/heartbeat"
 	"github.com/jmvaldez/bosun/internal/paths"
 	"github.com/jmvaldez/bosun/internal/platform"
-	"github.com/jmvaldez/bosun/internal/refresh"
 	"github.com/jmvaldez/bosun/internal/tmuxconf"
 )
 
@@ -96,7 +96,7 @@ func newRig(t *testing.T) *rig {
 	}
 	conf, _ := tmuxconf.Generate(tmuxconf.Options{Version: "0.1.0", Bosun: "/usr/bin/bosun", JumpKey: "a", PopupKey: "W"})
 	os.WriteFile(p.TmuxConf(), []byte(conf), 0o644)
-	refresh.WriteIdentity(p.Identity(), "me@example.com", now.Add(-time.Hour))
+	claude.WriteIdentity(p.Identity(), "me@example.com", now.Add(-time.Hour))
 	os.WriteFile(p.IngestMarker(), []byte(`{"at":"`+now.Add(-time.Hour).Format(time.RFC3339)+`"}`), 0o644)
 	return r
 }
@@ -527,7 +527,7 @@ func TestWarnsOnASessionThatStartedBeforeThePluginLoaded(t *testing.T) {
 func TestWarnsOnAClaudeProcessOutsideTmux(t *testing.T) {
 	r := newRig(t)
 	r.env.Procs = aliveProcs{}
-	cache := refresh.Cache{V: 1, FetchedAt: now.Add(-time.Second), Rows: []refresh.Row{
+	cache := claude.AgentsCache{V: 1, FetchedAt: now.Add(-time.Second), Rows: []claude.Agent{
 		{SessionID: "11111111-0000-0000-0000-000000000001", PID: 4242, Kind: "interactive"},
 		{SessionID: "22222222-0000-0000-0000-000000000002", PID: 4343, Kind: "interactive"},
 		{SessionID: "33333333-0000-0000-0000-000000000003", PID: 4444, Kind: "background"},

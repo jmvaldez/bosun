@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"math"
@@ -51,8 +52,16 @@ type Stats struct {
 // Re-running it over unchanged transcripts changes no session, request or
 // prompt row.
 func (d *DB) Ingest(o IngestOpts) (Stats, error) {
+	st, err := d.ingest(o)
+	if err != nil {
+		return st, fmt.Errorf("ledger: ingest: %w", err)
+	}
+	return st, nil
+}
+
+func (d *DB) ingest(o IngestOpts) (Stats, error) {
 	var st Stats
-	lock, err := flock.TryLock(o.Paths.Locks()+"/ingest.lock", 0)
+	lock, err := flock.TryLock(o.Paths.Lock("ingest"), 0)
 	if errors.Is(err, flock.ErrBusy) {
 		st.Skipped = true
 		return st, nil
@@ -79,7 +88,7 @@ func (d *DB) Ingest(o IngestOpts) (Stats, error) {
 			pending = append(pending, f)
 		}
 	}
-	orderForIngest(pending, func(id string) bool { return startedAsFork(o.Paths.Session(id) + "/events.jsonl") })
+	orderForIngest(pending, func(id string) bool { return startedAsFork(o.Paths.Events(id)) })
 	touched := map[string]bool{}
 	for _, f := range pending {
 		if o.Budget > 0 && o.Now().Sub(start) > o.Budget {
@@ -716,7 +725,14 @@ func (w *fileWriter) parent() string {
 // transcripts. The refresher calls it every tick so today's spend moves with
 // the status line between full ingests.
 func (d *DB) FinalizeLive(o IngestOpts) error {
-	lock, err := flock.TryLock(o.Paths.Locks()+"/ingest.lock", 0)
+	if err := d.finalizeLive(o); err != nil {
+		return fmt.Errorf("ledger: finalize live: %w", err)
+	}
+	return nil
+}
+
+func (d *DB) finalizeLive(o IngestOpts) error {
+	lock, err := flock.TryLock(o.Paths.Lock("ingest"), 0)
 	if errors.Is(err, flock.ErrBusy) {
 		return nil
 	}

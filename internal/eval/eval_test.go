@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jmvaldez/bosun/internal/claude"
 	"github.com/jmvaldez/bosun/internal/flock"
 	"github.com/jmvaldez/bosun/internal/hook"
 	"github.com/jmvaldez/bosun/internal/live"
 	"github.com/jmvaldez/bosun/internal/paths"
 	"github.com/jmvaldez/bosun/internal/platform"
-	"github.com/jmvaldez/bosun/internal/refresh"
 	"github.com/jmvaldez/bosun/internal/tmux"
 )
 
@@ -120,8 +120,8 @@ func (r *rig) emit(sid, pane, ev string, mod ...func(*hook.Event)) {
 	f.Close()
 }
 
-func (r *rig) writeAgents(fetched time.Time, rows ...refresh.Row) {
-	b, _ := json.Marshal(refresh.Cache{V: 1, FetchedAt: fetched, Rows: rows})
+func (r *rig) writeAgents(fetched time.Time, rows ...claude.Agent) {
+	b, _ := json.Marshal(claude.AgentsCache{V: 1, FetchedAt: fetched, Rows: rows})
 	os.MkdirAll(r.d.Ad.Paths.Cache, 0o700)
 	os.WriteFile(r.d.Ad.Paths.AgentsCache(), b, 0o600)
 }
@@ -226,7 +226,7 @@ func TestStaleAgentsCacheSpawnsRefreshOnce(t *testing.T) {
 	}
 	// A fresh cache means no spawn.
 	r.clk.Advance(10 * time.Second)
-	r.writeAgents(r.clk.Now(), refresh.Row{SessionID: "aaa", PID: 1, Status: "busy"})
+	r.writeAgents(r.clk.Now(), claude.Agent{SessionID: "aaa", PID: 1, Status: "busy"})
 	Evaluate(r.d)
 	if len(r.sp.calls) != 1 {
 		t.Errorf("spawned with a fresh cache: %v", r.sp.calls)
@@ -245,7 +245,7 @@ func TestCtrlCMovesWorkingToIdleViaAgents(t *testing.T) {
 	r.emit("aaa", "%1", "UserPromptSubmit")
 	Evaluate(r.d)
 	r.clk.Advance(5 * time.Second)
-	r.writeAgents(r.clk.Now(), refresh.Row{SessionID: "aaa", PID: 1, Status: "idle"})
+	r.writeAgents(r.clk.Now(), claude.Agent{SessionID: "aaa", PID: 1, Status: "idle"})
 	res := Evaluate(r.d)
 	if res.Counts.Working != 0 || res.Counts.Idle != 1 {
 		t.Errorf("counts = %+v", res.Counts)
@@ -256,12 +256,12 @@ func TestNeedsYouLeavesAfterTwoNotWaitingFetches(t *testing.T) {
 	r := newRig(t)
 	r.emit("aaa", "%1", "PermissionRequest")
 	r.clk.Advance(time.Second)
-	r.writeAgents(r.clk.Now(), refresh.Row{SessionID: "aaa", PID: 1, Status: "idle"})
+	r.writeAgents(r.clk.Now(), claude.Agent{SessionID: "aaa", PID: 1, Status: "idle"})
 	if Evaluate(r.d).Counts.NeedsYou != 1 {
 		t.Fatal("left needs-you after one read")
 	}
 	r.clk.Advance(5 * time.Second)
-	r.writeAgents(r.clk.Now(), refresh.Row{SessionID: "aaa", PID: 1, Status: "idle"})
+	r.writeAgents(r.clk.Now(), claude.Agent{SessionID: "aaa", PID: 1, Status: "idle"})
 	if res := Evaluate(r.d); res.Counts.NeedsYou != 0 || res.Counts.Idle != 1 {
 		t.Errorf("counts = %+v", res.Counts)
 	}
@@ -272,7 +272,7 @@ func TestBackgroundRowDoesNotIdleWorkingSession(t *testing.T) {
 	r.emit("aaa", "%1", "UserPromptSubmit")
 	Evaluate(r.d)
 	r.clk.Advance(5 * time.Second)
-	r.writeAgents(r.clk.Now(), refresh.Row{SessionID: "aaa", Background: true, State: "done"})
+	r.writeAgents(r.clk.Now(), claude.Agent{SessionID: "aaa", Background: true, State: "done"})
 	if res := Evaluate(r.d); res.Counts.Working != 1 {
 		t.Errorf("counts = %+v", res.Counts)
 	}
@@ -281,8 +281,8 @@ func TestBackgroundRowDoesNotIdleWorkingSession(t *testing.T) {
 // D-17: sessions known only from agents.json never appear.
 func TestAgentsOnlySessionsAreInvisible(t *testing.T) {
 	r := newRig(t)
-	r.writeAgents(r.clk.Now(), refresh.Row{SessionID: "ghost", Background: true, State: "blocked"},
-		refresh.Row{SessionID: "ghost2", PID: 1, Status: "waiting"})
+	r.writeAgents(r.clk.Now(), claude.Agent{SessionID: "ghost", Background: true, State: "blocked"},
+		claude.Agent{SessionID: "ghost2", PID: 1, Status: "waiting"})
 	res := Evaluate(r.d)
 	if res.Counts.Sessions != 0 || len(res.Sessions) != 0 {
 		t.Errorf("result = %+v", res)

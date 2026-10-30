@@ -5,12 +5,12 @@ import (
 	"io"
 	"time"
 
+	"github.com/jmvaldez/bosun/internal/claude"
 	"github.com/jmvaldez/bosun/internal/config"
 	"github.com/jmvaldez/bosun/internal/ledger"
 	"github.com/jmvaldez/bosun/internal/live"
 	"github.com/jmvaldez/bosun/internal/pace"
 	"github.com/jmvaldez/bosun/internal/platform"
-	"github.com/jmvaldez/bosun/internal/plugstate"
 	"github.com/jmvaldez/bosun/internal/spend"
 	"github.com/jmvaldez/bosun/internal/task"
 )
@@ -23,40 +23,26 @@ const (
 	ingestBudget = 10 * time.Second
 )
 
-// IngestOpts builds the ledger options every caller shares, so `spend` and the
-// refresher agree on task parsing, liveness and the fallback account.
+// IngestOpts is the one place ingest options are built, so `spend`, `backfill`
+// and the refresher agree on task parsing, liveness and the fallback account.
+// It is exported because those callers in main share it; it stays here rather
+// than in ledger, which cannot import live.
 func IngestOpts(ad platform.Adapters, cfg config.Config) ledger.IngestOpts {
-	parser, err := task.New(cfg.Task.KeyRegex, cfg.Task.Prefixes)
-	if err != nil {
-		parser = task.Default()
-	}
 	acct := ""
-	if id, ok := ReadIdentity(ad.Paths.Identity()); ok {
+	if id, ok := claude.ReadIdentity(ad.Paths.Identity()); ok {
 		acct = id.AccountKey
 	}
 	liveSessions := live.Read(ad.Paths.Live()).Sessions
 	return ledger.IngestOpts{
 		Paths:   ad.Paths,
 		Now:     ad.Clock.Now,
-		Parser:  parser,
+		Parser:  task.FromConfig(cfg.Task),
 		Account: acct,
 		IsLive: func(id string) bool {
 			s := liveSessions[id]
 			return s != nil && !s.Ended
 		},
 	}
-}
-
-// Contributions is spend.Contributions with live cost applied: when
-// settings.json's status line is not bosun's wrap, amounts with no trusted
-// figure are redacted (D-31). Every reader of spend goes through it, so the bar,
-// the popup and `bosun spend` agree.
-func Contributions(ad platform.Adapters, snap ledger.Snapshot, clock spend.Clock) []spend.Contribution {
-	cs := spend.Contributions(snap, clock)
-	if !plugstate.LiveCost(ad.Paths.ClaudeSettings()) {
-		cs = spend.Redact(cs)
-	}
-	return cs
 }
 
 // refreshSpend keeps the ledger, today.json and pace.json current: a full
@@ -97,7 +83,7 @@ func refreshSpend(ad platform.Adapters, cfg config.Config, out io.Writer) error 
 	}
 	clock := spend.NewClock(cfg.Spend.Day)
 	day := clock.Day(now)
-	cs := Contributions(ad, snap, clock)
+	cs := spend.ForDisplay(snap, clock, ad.Paths.ClaudeSettings())
 	today := spend.DayTotal(cs, clock, day, time.Time{})
 	// The pace baseline is rebuilt once a day. A failure is dropped, not
 	// returned: pace.json keeps its old BuiltDay, so the next tick retries.

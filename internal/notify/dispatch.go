@@ -15,6 +15,7 @@ import (
 	"github.com/jmvaldez/bosun/internal/peek"
 	"github.com/jmvaldez/bosun/internal/platform"
 	"github.com/jmvaldez/bosun/internal/rules"
+	"github.com/jmvaldez/bosun/internal/statusline"
 )
 
 // lockWait is the notify lock's polling deadline (LESSONS L-12).
@@ -35,8 +36,8 @@ const (
 type Deps struct {
 	Paths    paths.Paths
 	Cfg      config.Config
-	Notifier platform.Notifier // nil: notifications are off
-	Focus    platform.Focus    // nil: focus unknown, so notify
+	Notifier Notifier       // nil: notifications are off
+	Focus    platform.Focus // nil: focus unknown, so notify
 	Clock    platform.Clock
 	// Spawn starts a detached `bosun <args>` child; nil turns click handling off.
 	Spawn func(args ...string) error
@@ -52,7 +53,7 @@ func Dispatch(d Deps, r Request) (Outcome, string, error) {
 	if d.Notifier == nil {
 		return Off, "no notification backend", nil
 	}
-	lock, err := flock.TryLock(d.Paths.Locks()+"/notify.lock", lockWait)
+	lock, err := flock.TryLock(d.Paths.Lock("notify"), lockWait)
 	if errors.Is(err, flock.ErrBusy) {
 		return Busy, "another dispatch holds the lock", nil
 	}
@@ -103,7 +104,7 @@ func Dispatch(d Deps, r Request) (Outcome, string, error) {
 }
 
 func (d Deps) post(st *State, m Message, edge string, now time.Time) (Outcome, string, error) {
-	n := platform.Notice{Title: m.Title, Subtitle: m.Subtitle, Body: m.Body, Line2: m.Line2, Icon: m.Icon, Group: m.Group,
+	n := Notice{Title: m.Title, Subtitle: m.Subtitle, Body: m.Body, Line2: m.Line2, Icon: m.Icon, Group: m.Group,
 		Sound: m.Sound && d.Cfg.Notify.Sound != ""}
 	actions, markup := d.serverCaps(st, now)
 	n.Markup = markup
@@ -147,7 +148,7 @@ func (d Deps) overflow(st *State, now time.Time) (Outcome, string, error) {
 	if p, ok := st.Posted[OverflowGroup]; ok && now.Sub(p.At) < time.Minute {
 		return Dropped, "rate limited; overflow notice already shown", nil
 	}
-	n := platform.Notice{Title: m.Title, Subtitle: m.Subtitle, Body: m.Body, Group: m.Group}
+	n := Notice{Title: m.Title, Subtitle: m.Subtitle, Body: m.Body, Group: m.Group}
 	if p, ok := st.Posted[OverflowGroup]; ok && d.Notifier.Capabilities().Replace {
 		n.ReplaceID = p.ID
 	}
@@ -199,7 +200,7 @@ func (d Deps) recheck(r *Request) string {
 
 func (d Deps) recheckAttention(r *Request) string {
 	s := FoldSession(d.Paths, r.Session)
-	_, snapErr := os.Stat(d.Paths.Session(r.Session) + "/statusline.json")
+	_, snapErr := os.Stat(d.Paths.StatuslineSnap(r.Session))
 	if !s.Interactive(snapErr == nil) {
 		return "non-interactive session (D-10)"
 	}
@@ -303,7 +304,7 @@ func FoldSession(p paths.Paths, id string) *live.Session {
 	if s == nil {
 		s = &live.Session{ID: id, State: live.Idle}
 	}
-	_, _ = live.FoldFile(p.Session(id)+"/events.jsonl", s)
+	_, _ = live.FoldFile(p.Events(id), s)
 	return s
 }
 
@@ -311,11 +312,7 @@ func FoldSession(p paths.Paths, id string) *live.Session {
 // ledger.SnapshotOwnUSD so a notice and a rule cannot disagree; ok is false when
 // there is no usable snapshot for this session.
 func OwnUSD(p paths.Paths, s *live.Session) (float64, bool) {
-	b, err := os.ReadFile(p.Session(s.ID) + "/statusline.json")
-	if err != nil {
-		return 0, false
-	}
-	snap, ok := parseSnapshot(b)
+	snap, ok := statusline.ReadSnapshot(p.StatuslineSnap(s.ID))
 	if !ok || snap.SessionID != s.ID {
 		return 0, false
 	}

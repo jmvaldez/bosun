@@ -86,7 +86,7 @@ func (a *app) spend(args []string) int {
 		fmt.Fprintf(a.errw, "bosun spend: %v\n", err)
 		return 1
 	}
-	res, err := spend.Group(spend.Filter(refresh.Contributions(a.ad, snap, clock), from, taskKey), by, clock)
+	res, err := spend.Group(spend.Filter(spend.ForDisplay(snap, clock, a.ad.Paths.ClaudeSettings()), from, taskKey), by, clock)
 	if err != nil {
 		fmt.Fprintf(a.errw, "bosun spend: %v\n", err)
 		return 2

@@ -11,6 +11,7 @@ import (
 
 	"github.com/jmvaldez/bosun/internal/platform"
 	"github.com/jmvaldez/bosun/internal/runner"
+	"github.com/jmvaldez/bosun/internal/shell"
 )
 
 const Timeout = 500 * time.Millisecond
@@ -223,11 +224,6 @@ func (c Client) SendKeys(pane string, keys []string) error {
 	return err
 }
 
-// shellQuote single-quotes s for a POSIX shell.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
 // windowDir returns the fixed directory passed to new-window -c. tmux expands
 // formats in the -c value, so `#(cmd)` in a directory name would run cmd in the
 // server (audit H-1); the real directory is entered by the command instead.
@@ -241,7 +237,7 @@ func windowDir() string {
 // inDir prefixes command with a cd into dir. The trailing command argument of
 // new-window is not format-expanded.
 func inDir(dir, command string) string {
-	return "cd -- " + shellQuote(dir) + " && " + command
+	return "cd -- " + shell.Quote(dir) + " && " + command
 }
 
 // windowName escapes name for new-window -n, which tmux format-expands: a

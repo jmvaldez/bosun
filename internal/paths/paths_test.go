@@ -74,3 +74,29 @@ func TestValidSessionID(t *testing.T) {
 		t.Error("length bound is 64")
 	}
 }
+
+func TestSessionAndLockPaths(t *testing.T) {
+	p := Paths{State: "/s"}
+	for _, c := range []struct{ name, got, want string }{
+		{"Events", p.Events("abc"), "/s/sessions/abc/events.jsonl"},
+		{"StatuslineSnap", p.StatuslineSnap("abc"), "/s/sessions/abc/statusline.json"},
+		{"StatuslineLock", p.StatuslineLock("abc"), "/s/sessions/abc/statusline.lock"},
+		{"Lock", p.Lock("eval"), "/s/locks/eval.lock"},
+		{"Events unresolved", Paths{}.Events("abc"), ""},
+		{"StatuslineSnap unresolved", Paths{}.StatuslineSnap("abc"), ""},
+		{"StatuslineLock unresolved", Paths{}.StatuslineLock("abc"), ""},
+		{"Lock unresolved", Paths{}.Lock("eval"), ""},
+	} {
+		if c.got != c.want {
+			t.Errorf("%s = %q, want %q", c.name, c.got, c.want)
+		}
+	}
+}
+
+func TestShortID(t *testing.T) {
+	for in, want := range map[string]string{"": "", "abc": "abc", "12345678": "12345678", "123456789": "12345678"} {
+		if got := ShortID(in); got != want {
+			t.Errorf("ShortID(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

@@ -2,7 +2,6 @@ package eval
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -12,6 +11,8 @@ import (
 	"github.com/jmvaldez/bosun/internal/pace"
 	"github.com/jmvaldez/bosun/internal/rules"
 	"github.com/jmvaldez/bosun/internal/spend"
+	"github.com/jmvaldez/bosun/internal/statusline"
+	"github.com/jmvaldez/bosun/internal/subcost"
 )
 
 type ruleResult struct {
@@ -49,7 +50,7 @@ func (d Deps) evalRules(f *live.File, now time.Time) ruleResult {
 			}
 			if tp := subagentTranscript(s.Transcript, aid); tp != "" {
 				if sub.Cost == nil {
-					sub.Cost = newTracker()
+					sub.Cost = &subcost.Tracker{}
 				}
 				sub.CostUSD = sub.Cost.Update(tp)
 			}
@@ -206,11 +207,7 @@ func (d Deps) retractCleared(f live.File, before map[string]string) {
 // sessionOwn is the session's own spend from its status line snapshot;
 // ledger.SnapshotOwnUSD makes the fork decision, shared with notices.
 func (d Deps) sessionOwn(s *live.Session) (float64, bool) {
-	b, err := readSmall(filepath.Join(d.Ad.Paths.Session(s.ID), "statusline.json"))
-	if err != nil {
-		return 0, false
-	}
-	snap, ok := statuslineSnap(b)
+	snap, ok := statusline.ReadSnapshot(d.Ad.Paths.StatuslineSnap(s.ID))
 	if !ok || snap.SessionID != s.ID {
 		return 0, false
 	}

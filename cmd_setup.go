@@ -120,7 +120,7 @@ func tildePath(home, s string) string {
 // runs the setup flow first; either way it then does what it always did, except
 // that cancelling the question ends it there.
 func (a *app) bare() int {
-	if in, ok := a.in.(*os.File); ok && isTerminal(in) && isTerminal(a.out) && !install.SetUp(a.ad, install.Options{}) {
+	if in, ok := a.in.(*os.File); ok && isTerminal(in) && isTerminal(a.out) && !install.IsSetUp(a.ad, install.Options{}) {
 		if rc, cancelled := a.runSetup(nil); cancelled {
 			return rc
 		}

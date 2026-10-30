@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jmvaldez/bosun/internal/claude"
 	"github.com/jmvaldez/bosun/internal/config"
 	"github.com/jmvaldez/bosun/internal/heartbeat"
 	"github.com/jmvaldez/bosun/internal/hook"
@@ -26,8 +27,8 @@ import (
 	"github.com/jmvaldez/bosun/internal/paths"
 	"github.com/jmvaldez/bosun/internal/platform"
 	"github.com/jmvaldez/bosun/internal/plugstate"
-	"github.com/jmvaldez/bosun/internal/refresh"
 	"github.com/jmvaldez/bosun/internal/runner"
+	"github.com/jmvaldez/bosun/internal/statusline"
 	"github.com/jmvaldez/bosun/internal/tmuxconf"
 )
 
@@ -280,16 +281,13 @@ func (e Env) checkStatusLine(add addFn, s claudeSettings) {
 			continue
 		}
 		checked++
-		b, err := os.ReadFile(e.Paths.Session(id) + "/statusline.json")
-		var snap struct {
-			TS string `json:"ts"`
-		}
-		if err != nil || json.Unmarshal(b, &snap) != nil {
-			stale = append(stale, short(id)+" (none)")
+		snap, ok := statusline.ReadSnapshot(e.Paths.StatuslineSnap(id))
+		if !ok {
+			stale = append(stale, paths.ShortID(id)+" (none)")
 			continue
 		}
 		if t, err := time.Parse(time.RFC3339Nano, snap.TS); err != nil || e.Now.Sub(t) > snapshotFresh {
-			stale = append(stale, short(id)+" (old)")
+			stale = append(stale, paths.ShortID(id)+" (old)")
 		}
 	}
 	sort.Strings(stale)
@@ -301,13 +299,6 @@ func (e Env) checkStatusLine(add addFn, s claudeSettings) {
 	default:
 		add("snapshots", OK, "every live session has a fresh status line snapshot")
 	}
-}
-
-func short(id string) string {
-	if len(id) > 8 {
-		return id[:8]
-	}
-	return id
 }
 
 // ---- binary
@@ -536,7 +527,7 @@ func (e Env) checkIdentity(add addFn) {
 		return
 	}
 	add("claude", OK, "claude resolves at %s", e.ClaudeBin)
-	id, ok := refresh.ReadIdentity(e.Paths.Identity())
+	id, ok := claude.ReadIdentity(e.Paths.Identity())
 	if !ok {
 		add("identity", Warn, "no cached account key (identity.json): run bosun install or bosun refresh")
 		return
@@ -555,7 +546,7 @@ func (e Env) checkIdentity(add addFn) {
 		return
 	}
 	add("identity", OK, "cached account key matches the current login (cached %v ago)", e.Now.Sub(id.FetchedAt).Round(time.Minute))
-	if c, _ := refresh.ReadCache(e.Paths.AgentsCache(), e.Now, refresh.TTL); !c.FetchedAt.IsZero() {
+	if c, _ := claude.ReadAgents(e.Paths.AgentsCache(), e.Now, claude.AgentsTTL); !c.FetchedAt.IsZero() {
 		add("agents-cache", OK, "agents.json is %v old", e.Now.Sub(c.FetchedAt).Round(time.Second))
 	}
 }
@@ -632,19 +623,16 @@ func (e Env) checkSessionsSeen(add addFn) {
 		if !de.IsDir() || !paths.ValidSessionID(id) {
 			continue
 		}
-		b, err := os.ReadFile(e.Paths.Session(id) + "/statusline.json")
-		var snap struct {
-			TS string `json:"ts"`
-		}
-		if err != nil || json.Unmarshal(b, &snap) != nil {
+		snap, ok := statusline.ReadSnapshot(e.Paths.StatuslineSnap(id))
+		if !ok {
 			continue
 		}
 		t, err := time.Parse(time.RFC3339Nano, snap.TS)
 		if err != nil || e.Now.Sub(t) > snapshotFresh {
 			continue
 		}
-		if _, err := os.Stat(e.Paths.Session(id) + "/events.jsonl"); err != nil && errors.Is(err, fs.ErrNotExist) {
-			notes = append(notes, "session "+short(id)+" started before the plugin loaded; restart it")
+		if _, err := os.Stat(e.Paths.Events(id)); err != nil && errors.Is(err, fs.ErrNotExist) {
+			notes = append(notes, "session "+paths.ShortID(id)+" started before the plugin loaded; restart it")
 		}
 	}
 	lf := live.Read(e.Paths.Live())
@@ -654,7 +642,7 @@ func (e Env) checkSessionsSeen(add addFn) {
 			known[s.PID] = true
 		}
 	}
-	cache, _ := refresh.ReadCache(e.Paths.AgentsCache(), e.Now, refresh.TTL)
+	cache, _ := claude.ReadAgents(e.Paths.AgentsCache(), e.Now, claude.AgentsTTL)
 	procEnv := e.ProcEnv
 	if procEnv == nil {
 		procEnv = readProcEnv
@@ -674,7 +662,7 @@ func (e Env) checkSessionsSeen(add addFn) {
 		// In tmux but never heard from: not "outside tmux", so the fix is
 		// the plugin or hooks, not where the session was started.
 		heard := known[row.PID]
-		if _, err := os.Stat(e.Paths.Session(row.SessionID) + "/events.jsonl"); err == nil {
+		if _, err := os.Stat(e.Paths.Events(row.SessionID)); err == nil {
 			heard = true
 		}
 		if !heard {

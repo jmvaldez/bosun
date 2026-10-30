@@ -37,9 +37,9 @@ func LiveCostOn(ad platform.Adapters, opt Options) bool {
 	return plugstate.LiveCost(settingsPath(ad, opt))
 }
 
-// SetUp reports whether the plugin is installed and enabled, which is what
+// IsSetUp reports whether the plugin is installed and enabled, which is what
 // separates a first run from a later one.
-func SetUp(ad platform.Adapters, opt Options) bool {
+func IsSetUp(ad platform.Adapters, opt Options) bool {
 	return pluginEnabled(ad, opt) == 1
 }
 
@@ -58,12 +58,12 @@ func Setup(ad platform.Adapters, opt Options, env Env, so SetupOptions, out io.W
 		answer = *so.Answer
 	case so.Ask == nil:
 		fmt.Fprintln(out, NotInteractive)
-		if SetUp(ad, opt) {
+		if IsSetUp(ad, opt) {
 			return 0, false
 		}
 		return 2, false
 	default:
-		a, err := so.Ask(!SetUp(ad, opt) || current)
+		a, err := so.Ask(!IsSetUp(ad, opt) || current)
 		if err != nil {
 			fmt.Fprintln(out, "Nothing changed.")
 			return 1, true

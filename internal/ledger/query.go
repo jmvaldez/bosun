@@ -3,6 +3,7 @@ package ledger
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -37,6 +38,14 @@ type Snapshot struct {
 
 // Load reads sessions and the requests at or after since (zero means all).
 func (d *DB) Load(since time.Time) (Snapshot, error) {
+	snap, err := d.load(since)
+	if err != nil {
+		return snap, fmt.Errorf("ledger: load: %w", err)
+	}
+	return snap, nil
+}
+
+func (d *DB) load(since time.Time) (Snapshot, error) {
 	snap := Snapshot{Sessions: map[string]Session{}, Prompts: map[string]Prompt{}, Subagents: map[string]Subagent{}}
 	rows, err := d.sql.Query(`SELECT session_id, account_key, repo, branch, task, task_source, started_at, ended_at,
 		last_activity_at, total_usd, inherited_usd, banked_usd, forked_from, launch_session_id, trusted, covered_from FROM sessions`)
