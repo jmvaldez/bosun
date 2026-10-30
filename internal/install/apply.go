@@ -401,7 +401,7 @@ func pluginInstallStep(ad platform.Adapters, opt Options, env Env) Step {
 	}
 	dir := marketplaceDir(opt)
 	if dir == "" {
-		s.Refuse = "no .claude-plugin/marketplace.json found (pass --repo)"
+		s.Refuse = "not installed: no .claude-plugin/marketplace.json found; run setup from your bosun checkout or pass --repo <path>"
 		return s
 	}
 	shown := env.Tilde(dir)
