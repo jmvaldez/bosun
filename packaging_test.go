@@ -74,3 +74,22 @@ func TestPostinstallOnlyPrints(t *testing.T) {
 		t.Error("postinstall does not tell the user to run bosun setup")
 	}
 }
+
+// `make install` mirrors the tarball layout so a source build's setup finds the
+// plugin beside the binary, and must never remove the whole share dir (it is
+// also bosun's data dir under the default PREFIX).
+func TestMakeInstallShipsThePlugin(t *testing.T) {
+	b, err := os.ReadFile("Makefile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(b)
+	for _, want := range []string{"SHARE_DIR := $(PREFIX)/share/bosun", "cp -R plugin ", "cp .claude-plugin/marketplace.json "} {
+		if !strings.Contains(text, want) {
+			t.Errorf("Makefile install lacks %q", want)
+		}
+	}
+	if strings.Contains(text, "rm -rf $(SHARE_DIR)\n") || strings.Contains(text, "rm -rf $(SHARE_DIR) ") {
+		t.Error("Makefile removes the whole share dir, which holds bosun's data")
+	}
+}

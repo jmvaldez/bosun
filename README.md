@@ -34,7 +34,7 @@ Requires Go 1.26+, tmux 3.2+, and Claude Code with plugin support.
 
 ```sh
 git clone https://github.com/jmvaldez/bosun && cd bosun
-make install      # installs to ~/.local/bin/bosun; set PREFIX to change
+make install      # installs to ~/.local/bin/bosun and the plugin to ~/.local/share/bosun; set PREFIX to change
 bosun setup       # installs the plugin, loads the tmux config, runs checks
 ```
 

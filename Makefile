@@ -4,6 +4,7 @@ export CGO_ENABLED := 0
 BIN      := bin/bosun
 PREFIX   ?= $(HOME)/.local
 INSTALL_DIR := $(PREFIX)/bin
+SHARE_DIR := $(PREFIX)/share/bosun
 VERSION  := $(shell cat VERSION)
 # Tool versions are pinned so CI and local runs agree.
 GORELEASER_VERSION  := v2.19.0
@@ -18,10 +19,23 @@ build:
 # Copy to a temp file in the target dir, then rename over the binary. mv within
 # one filesystem is atomic, so a running bosun (or a hook mid-exec) never sees a
 # half-written file, and replacing a running binary does not fail with ETXTBSY.
+# The plugin goes beside it in the release tarball's layout, so `bosun setup`
+# finds it from any directory. Only the plugin and .claude-plugin subdirs are
+# replaced: with the default PREFIX, $(SHARE_DIR) is also bosun's data dir.
 install: build
 	mkdir -p $(INSTALL_DIR)
 	tmp=$$(mktemp $(INSTALL_DIR)/.bosun.XXXXXX) && \
 	  cp $(BIN) "$$tmp" && chmod 755 "$$tmp" && mv -f "$$tmp" $(INSTALL_DIR)/bosun
+	mkdir -p $(SHARE_DIR)
+	stage=$$(mktemp -d $(SHARE_DIR)/.plugin.XXXXXX) && \
+	  mkdir "$$stage/.claude-plugin" && \
+	  cp -R plugin "$$stage/plugin" && \
+	  cp .claude-plugin/marketplace.json "$$stage/.claude-plugin/" && \
+	  find "$$stage" -type d -exec chmod 755 {} + && \
+	  find "$$stage" -type f -exec chmod 644 {} + && \
+	  rm -rf $(SHARE_DIR)/plugin $(SHARE_DIR)/.claude-plugin && \
+	  mv "$$stage/plugin" "$$stage/.claude-plugin" $(SHARE_DIR)/ && \
+	  rmdir "$$stage"
 
 vet:
 	go vet ./...

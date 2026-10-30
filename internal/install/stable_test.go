@@ -73,6 +73,21 @@ func TestStablePathsFallBackToTheResolvedShareDir(t *testing.T) {
 	}
 }
 
+// A source build (`make install`) leaves only <prefix>/bin/bosun and
+// <prefix>/share/bosun; setup run from an unrelated directory must find it.
+func TestMarketplaceDirFindsShareBesideTheBinaryFromElsewhere(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	share := addShare(t, bin)
+	elsewhere := t.TempDir()
+
+	if got := marketplaceDir(Options{SearchDirs: []string{bin, elsewhere}}); got != share {
+		t.Errorf("share dir = %s, want %s", got, share)
+	}
+}
+
 // Another bosun on PATH, or none, is not this binary and lends nothing.
 func TestStablePathsIgnoreAnotherBosun(t *testing.T) {
 	root, cellarBin, _ := brewLayout(t)
