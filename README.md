@@ -2,10 +2,12 @@
 
 **A tmux status bar and dashboard for every Claude Code session you have running.**
 
-When you run several Claude Code sessions across tmux panes, you lose track of
-them: one is stuck at a permission prompt, another finished ten minutes ago,
-a subagent has quietly spent $8. bosun shows all of that at a glance and takes
-you straight to the pane that needs you.
+For people who live in tmux and run several Claude Code sessions in parallel.
+
+With that many sessions you lose track: one is stuck at a permission prompt,
+another finished ten minutes ago, a subagent has been looping for twenty
+minutes. bosun shows all of that at a glance and takes you straight to the pane
+that needs you.
 
 ```
 ⚑ 2 waiting  ▲ 1 runaway  ✓ 1 done  $23.40 / $50
@@ -13,13 +15,14 @@ you straight to the pane that needs you.
 
 - **Know who's waiting.** The bar counts sessions blocked on a prompt or done
   with their turn, usually within a second. `prefix + a` jumps to the oldest.
+- **Catch runaways early.** Alerts fire for long or expensive subagents, cost
+  steps, stalled sessions, and days running above your usual spend.
 - **See what each one is doing.** `prefix + W` opens a popup with each
   session's task, repo, spend, and live activity (`running go test ./...`,
   `editing ui/view.go`, `waiting on 2 subagents`).
-- **Catch runaways early.** Alerts fire for long or expensive subagents, cost
-  steps, stalled sessions, and days running above your usual spend.
-- **Know where the money went.** `bosun spend` breaks cost down by day, task,
-  session, prompt and request. Totals match Claude Code's to the cent.
+- **Know where the tokens went.** `bosun spend` breaks cost down by day, task,
+  session, prompt and request, as estimates at API list prices. On a Pro or Max
+  plan, read them as relative spend.
 - **Get pinged, not interrupted.** Desktop notices when a session needs you or
   finishes, except for the pane you're already looking at.
 
@@ -72,9 +75,9 @@ state file in a few milliseconds. tmux runs `bosun status --tmux` each second
 to evaluate state and alerts. Transcripts are ingested into SQLite for the
 spend breakdown. Details: [docs/architecture.md](docs/architecture.md).
 
-**Cost figures** are estimates at API list prices, whatever your plan. Live
-session cost needs bosun to wrap your `statusLine.command`. `bosun setup` asks
-before it does that.
+**Cost figures** are estimates at API list prices, whatever your plan, so on a
+subscription they show relative spend, not your bill. Live session cost needs
+bosun to wrap your `statusLine.command`. `bosun setup` asks before it does that.
 
 **Privacy:** prompt text is never stored or logged. The popup's activity line
 is read from the transcript at render time. Set `privacy.show_text = false` to
