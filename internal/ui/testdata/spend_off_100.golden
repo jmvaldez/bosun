@@ -1,0 +1,40 @@
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ bosun spend  --by task → session → prompt → request · today               estimates at API rates │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ TODAY $18.85 + 2 — of $50 38%  pace 0.9x                                                         │
+│ LAST 7 DAYS $183.15  ▅▂▁▆█▇▃                                                                     │
+│ NAME                                                               TOKENS (in / out / cache) · $ │
+│ ▸ refund-cancel payments-api · 1 session · 1 subagent                                      $9.86 │
+│ ▸ webhook-retry payments-api · 1 session                                                   $4.20 │
+│ ▸ migrations payments-api · 1 session · 1 subagent                                         $2.95 │
+│ ▸ cancel-flow-ui member-portal · 1 session                                                 $1.84 │
+│ ▸ tf-upgrade infra-terraform · 1 session                                                       — │
+│ ▸ (no task) pitwall · 1 session                                                                — │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│ ──────────────────────────────────────────────────────────────────────────────────────────────── │
+│ TOTAL  0% est.  + 2 —                                                                     $18.85 │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ ←→ collapse / expand  b cycle group by  r range  e export CSV  enter jump  esc close             │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘

@@ -1,0 +1,28 @@
+bosun uninstall --apply
+
+bosun will make 7 changes:
+
+  1. Restore your original status line in ~/.claude/settings.json
+       Removes the bosun wrapper; your original command is put back.
+
+  2. Remove bosun's tmux config line from ~/.tmux.conf
+       - source-file -q ~/.local/share/bosun/tmux.conf
+
+  3. Unbind C-a W, C-a a and bosun's attach hook in the running tmux
+
+  4. Uninstall the Claude Code plugin
+       claude plugin uninstall bosun@bosun
+       claude plugin marketplace remove bosun
+
+  5. Delete ~/.local/state/bosun
+
+  6. Delete ~/.local/share/bosun
+
+  7. Delete ~/.config/bosun
+
+Backups of settings.json and .tmux.conf are saved before writing.
+(--show-diff prints the full before and after.)
+
+Apply? [y/N] Nothing changed.
+
+The binary is yours to remove: rm ~/.local/bin/bosun

@@ -1,0 +1,29 @@
+# Review pass
+
+Each finding was reproduced with a regression test written first and run against the unfixed code; the fix followed. Verdicts are after that repro.
+
+| # | Finding | Verdict | Fix | Regression test |
+|---|---------|---------|-----|-----------------|
+| 1 | D-8 never carried a turn in the real hook order (SubagentStop cleared the background flag before the synthetic UserPromptSubmit) | Reproduced | `Session.TurnCarry` is set at Stop from `BGPending` and survives SubagentStop; the next UserPromptSubmit keeps Edits/TurnStart/Failed when it is set | `TestD8CarriesTheTurnWhenSubagentStopComesFirst`, `TestD8OnTheRealFixture` (internal/live/review_test.go) |
+| 2 | A main Stop or another agent's PostToolBatch cleared a subagent's needs-you; the following permission_prompt was then deduped away | Reproduced | `releaseNeeds(aid)` ends a wait only for the agent that entered it (`NeedsAID`, empty = main); Stop no longer overrides a held wait; the owner is sticky | `TestSubagentWaitSurvivesMainStopOnTheRealFixture`, `TestOnlyTheAgentThatWaitsCanEndTheWait`, `TestNotificationAfterASubagentRequestKeepsItsOwner` |
+| 3 | A fork lost its inheritance after /compact or --resume (Source overwritten; two places subtracted only for `Source=="fork"`) | Reproduced in eval; the notify test is the same logic through the second caller (it was not separately run against the old code) | `Session.Forked` is sticky; `ledger.SnapshotOwnUSD(snap, forked)` is the one live decision, used by eval/rules.go and notify/dispatch.go, and `OwnUSD` stays the only subtraction | `TestForkInheritanceSurvivesCompactAndResume` (eval), `TestDoneBodyExcludesForkInheritanceAfterCompact` (notify), `TestSnapshotOwnUSDSubtractsOnlyForForks` (ledger) |
+| 4 | The popup tick was a catch-up (no Exe, no Notify): never retracted, swallowed alert fires | Reproduced by construction (the deps lacked both); the test checks the deps, not a spawned process | `uiSource.evalDeps()` passes Exe and Notify like `status --tmux`; focus suppression is still the dispatcher's | `TestPopupTickIsANormalEvaluation` (ui_eval_test.go) |
+| 5 | Two tmux servers sharing a state dir: marks reset on a server pid change, and a non-matching server marked everything pane-gone, clearing and re-firing alerts and losing dismissals | Reproduced | marks.json is keyed by server pid (older shape still read, dead servers pruned); a session whose locator names another live server is `Foreign`: not gone, not counted, not marked, alerts untouched | `TestEvaluatingFromAnotherServerKeepsMarksAndAlerts` (eval/servers_test.go), `TestMarksReadsTheOlderSingleServerShape` |
+| 6 | `isPlain` accepted `FOO=1 cmd`, producing `exec FOO=1 cmd` | Reproduced | a `=` in the first word forces the `sh -c` wrap | `TestWrapCommand` (two new rows), `TestWrapCommandRunsUnderShell` (env-prefixed command, with and without bosun) |
+| 7 | Fork ingest order was arbitrary when the first timestamps tied | Reproduced | ties are broken by the hook's SessionStart source=fork, then by which file has lines of its own ahead of the shared prefix, then mtime and path | `TestForkOrderOnATieUsesLinesBeforeTheSharedPrefix`, `TestForkOrderOnATieUsesTheSessionStartSource` |
+| 8 | Interrupt sent with an empty start token (platform Alive treats "" as any) | Reproduced | an empty token refuses with "pane changed, not sent" | "no start token recorded" case in `TestInterruptRefusesWhenAnyCheckFails` (internal/ui/interrupt_test.go) |
+| 9 | `uninstall --purge` with a mistyped BOSUN_*_DIR could empty a shared dir | Reproduced | purge requires the `.bosun` marker; `paths.EnsureMarkers` writes it into existing dirs holding only bosun's own entries after every command except doctor, config, uninstall, version | `TestPurgeRefusesADirBosunNeverMarked`, `TestEnsureMarkersMarksOnlyDirsHoldingOnlyBosunFiles`, `TestNormalCommandsMarkExistingDirsAndDoctorDoesNot`, command-level cases in `TestUninstallCommandPrintsAndPurgeIsSafe` |
+| 10 | No guard against a test resolving bosun paths under the real HOME (L-03) | Not a bug in the product; a missing guard | `internal/testguard`: `Main` points every `BOSUN_*_DIR` at a temp dir, fails if the resolved paths are under the real HOME, and fails if the real bosun dirs changed during the run; wired into every package that uses `internal/paths` | `TestCheckPathsFailsUnderTheRealHome`, `TestSnapshotSeesACreatedDir` |
+
+Notes
+
+- The hook now also stats the four dirs for the marker after it runs (marker present: four `Lstat` calls).
+- A dir with files bosun does not create is never auto-marked, so `uninstall --purge` refuses it until the user creates `.bosun` themselves.
+- The `config` dir is marked too, so `--purge-config` has the same protection.
+
+## Flake: TestHookSubprocessRecordsEvent TempDir cleanup
+
+- Symptom: `unlinkat .../state/locks: directory not empty`, 1 failure in 200 runs (`-count=200`).
+- Cause (inferred, not observed directly): a `Stop` hook spawns a detached `bosun notify-dispatch`, the only thing that can write under the test's state dir after the hook exits. The test returned as soon as the hook did, so TempDir removal could race it. A probe counting polls that found the child still running saw none in 200 runs (the window is about 1 in 200), so the wait has never been seen to trigger; the evidence is the failure signature plus the fix below.
+- Fix (test only, production spawn unchanged): `runBosun` calls `waitForDetachedChildren`, which polls /proc (Linux) for a process running the test binary whose environment carries the test's `BOSUN_STATE_DIR`, with a 5 s deadline. `result.elapsed` is measured before the wait.
+- Verified: `-count=200` green four times in a row (was 1 failure in 200 before), the full root package green, and `TestWaitForDetachedChildrenSeesARunningChild` shows the /proc scan does detect a live bosun process by its state dir.
