@@ -169,6 +169,81 @@ func (e Env) checkSessionsSeen(add addFn) {
 	}
 }
 
+// ctxFieldSince is the first Claude Code version known to send context_window
+// in the status line stdin (testdata/statusline-stdin.json).
+var ctxFieldSince = [3]int{2, 1, 309}
+
+// ctxSampled is how many of the most recently modified snapshots are read.
+const ctxSampled = 5
+
+// checkContextField is the drift check for context fill: it warns when Claude
+// Code versions that should send context_window do not, which turns handoff
+// suggestions off without any other sign.
+func (e Env) checkContextField(add addFn) {
+	type snapFile struct {
+		snap statusline.Snapshot
+		mod  time.Time
+	}
+	var snaps []snapFile
+	ents, _ := os.ReadDir(e.Paths.Sessions())
+	for _, de := range ents {
+		id := de.Name()
+		if !de.IsDir() || !paths.ValidSessionID(id) {
+			continue
+		}
+		p := e.Paths.StatuslineSnap(id)
+		fi, err := os.Stat(p)
+		if err != nil {
+			continue
+		}
+		if snap, ok := statusline.ReadSnapshot(p); ok {
+			snaps = append(snaps, snapFile{snap, fi.ModTime()})
+		}
+	}
+	if len(snaps) == 0 {
+		add("context-field", OK, "no status line data yet")
+		return
+	}
+	sort.Slice(snaps, func(i, j int) bool { return snaps[i].mod.After(snaps[j].mod) })
+	if len(snaps) > ctxSampled {
+		snaps = snaps[:ctxSampled]
+	}
+	newest := ""
+	for _, sf := range snaps {
+		if _, ok := sf.snap.Ctx(); ok {
+			add("context-field", OK, "context fill seen (Claude Code %s)", sf.snap.Version)
+			return
+		}
+		if newest == "" && versionAtLeast(sf.snap.Version, ctxFieldSince) {
+			newest = sf.snap.Version
+		}
+	}
+	if newest != "" {
+		add("context-field", Warn, "Claude Code %s sends no context_window; handoff suggestions are off", newest)
+		return
+	}
+	add("context-field", OK, "no status line data from a version that sends context fill yet")
+}
+
+// versionAtLeast reports whether a dotted major.minor.patch version is at least
+// min. An unparseable version is not.
+func versionAtLeast(v string, min [3]int) bool {
+	parts := strings.SplitN(strings.TrimPrefix(v, "v"), ".", 3)
+	if len(parts) != 3 {
+		return false
+	}
+	for i, part := range parts {
+		n, err := strconv.Atoi(part)
+		if err != nil {
+			return false
+		}
+		if n != min[i] {
+			return n > min[i]
+		}
+	}
+	return true
+}
+
 // readProcEnv is the Linux default for Env.ProcEnv. It gives up after a second
 // so a stuck /proc read cannot hold doctor.
 func readProcEnv(pid int) (map[string]string, error) {

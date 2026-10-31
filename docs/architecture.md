@@ -14,8 +14,8 @@ tmux status-interval (1 s) ──▶ bosun status --tmux ──▶ segment, tab 
 
 - The plugin registers 13 hook events. `bosun hook` appends one line to a state
   file and exits 0 in a few milliseconds.
-- `bosun statusline -- <your command>` records the session total, then runs your
-  original status line.
+- `bosun statusline -- <your command>` records the session total and the context
+  fill (when Claude Code reports it), then runs your original status line.
 - tmux runs `bosun status --tmux` each second to evaluate state and alert rules,
   update window markers and print the segment.
 - Transcripts are ingested into SQLite for the per-prompt and per-request
@@ -63,7 +63,7 @@ by role. `CONTEXT.md` defines the terms.
 Hot path (runs on every hook):
 
 - `hook` records one Claude Code hook event; the hottest path in bosun.
-- `statusline` records the live session total, then runs your real status line.
+- `statusline` records the live session total and context fill, then runs your real status line.
 - `stdin` reads a pipe without ever blocking past a deadline.
 - `heartbeat` records when hooks last ran and how long they took.
 

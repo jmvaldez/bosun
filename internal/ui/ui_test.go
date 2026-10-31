@@ -148,9 +148,9 @@ func TestAgentsFrameShape(t *testing.T) {
 	f := frame(m, 120, 26)
 	for _, want := range []string{
 		"bosun status", "6 sessions · 9 agents · 4 repos", "⚑ 2", "▲ 1", "✓ 1", "today $", "/ $50",
-		"TASK", "REPO", "TMUX", "STATE", "TIME", "$ TODAY",
+		"TASK", "REPO", "TMUX", "STATE", "TIME", "CTX", "$ TODAY",
 		"ABC-142", "work:1", "permission · npm test -- refunds", "5:54",
-		`question · "Keep idempotency key on retry?"`, "2:43",
+		`question · "Keep idempotency key on`, "2:43", // the CTX column takes 5 columns from STATE
 		"runaway · subagent 14m > 10m", "done · ready to review (12 files)", "2:17",
 		"editing db/migrate/0142_refund_state.sql", "3:17", "idle · prompt empty", "(no task)",
 		"└ · Explore", "subagent · 3m 40s · 22 tools", "$0.48", "└ ▲ Explore", "subagent · 14m 02s · 61 tools",

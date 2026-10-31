@@ -20,6 +20,15 @@ func ReadSnapshot(path string) (Snapshot, bool) {
 	return s, json.Unmarshal(b, &s) == nil
 }
 
+// Ctx returns the context fill percentage (0-100). ok is false when the status
+// line did not report one, which means unknown, never 0.
+func (s Snapshot) Ctx() (pct float64, ok bool) {
+	if s.CtxPct == nil {
+		return 0, false
+	}
+	return *s.CtxPct, true
+}
+
 func readFile(path string) ([]byte, error) {
 	f, err := os.Open(path)
 	if err != nil {

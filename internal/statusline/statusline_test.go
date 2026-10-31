@@ -194,4 +194,56 @@ func TestCapturedStdinFixture(t *testing.T) {
 	if s.CostUSD != 0.00414144 || s.Model != "claude-haiku-5-5" || s.Version != "2.1.309" || s.DurationMS != 213504 {
 		t.Errorf("snapshot = %+v", s)
 	}
+	if pct, ok := s.Ctx(); !ok || pct != 4 || s.CtxSize != 1000000 {
+		t.Errorf("ctx = %v, %v, size %d; want 4%% of 1000000", pct, ok, s.CtxSize)
+	}
+}
+
+// Absent, null and full context fill: absent stays unknown, never 0.
+func TestContextFill(t *testing.T) {
+	fixture, err := os.ReadFile("../../testdata/statusline-stdin-noctx.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name   string
+		raw    []byte
+		want   float64
+		wantOK bool
+	}{
+		{"absent", fixture, 0, false},
+		{"null", withContext(t, `{"used_percentage": null, "context_window_size": 200000}`), 0, false},
+		{"full", withContext(t, `{"used_percentage": 100.0, "context_window_size": 200000}`), 100, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			ad := adapters(t)
+			raw := bytes.ReplaceAll(c.raw, []byte("<session-1>"), []byte(sid))
+			Run(ad, nil, bytes.NewReader(raw), &bytes.Buffer{}, &bytes.Buffer{})
+			pct, ok := snapshot(t, ad).Ctx()
+			if ok != c.wantOK || pct != c.want {
+				t.Errorf("Ctx() = %v, %v; want %v, %v", pct, ok, c.want, c.wantOK)
+			}
+		})
+	}
+}
+
+// withContext returns the no-context fixture with a context_window object added.
+func withContext(t *testing.T, window string) []byte {
+	t.Helper()
+	b, err := os.ReadFile("../../testdata/statusline-stdin-noctx.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b = bytes.ReplaceAll(b, []byte("<session-1>"), []byte(sid))
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	m["context_window"] = json.RawMessage(window)
+	out, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }

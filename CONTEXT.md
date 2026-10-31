@@ -73,3 +73,5 @@
 **Start token**: an opaque process start marker that stops a reused pid from looking alive.
 
 **Launcher**: the command the user types to start Claude Code (plain `claude`, an alias, or a wrapper function). `bosun run` uses it through `$SHELL -ic`.
+
+**Context fill**: the share of the context window the session's last request used, read from the status line. Unknown until the first response, and shown as `—`, never as 0.
