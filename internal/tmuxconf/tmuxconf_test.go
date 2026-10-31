@@ -128,10 +128,10 @@ func TestTabMarkGlyphs(t *testing.T) {
 			}
 		}
 	}
-	if m := WinMark(false); !strings.Contains(m, "⚑") || !strings.Contains(m, "▲") || !strings.Contains(m, "✓") {
+	if m := WinMark(false); !strings.Contains(m, "⚑") || !strings.Contains(m, "▲") || !strings.Contains(m, "✓") || !strings.Contains(m, "⇄") {
 		t.Errorf("unicode mark = %s", m)
 	}
-	if m := WinMark(true); strings.ContainsAny(m, "⚑▲✓") {
+	if m := WinMark(true); strings.ContainsAny(m, "⚑▲✓⇄") || !strings.Contains(m, "<>") {
 		t.Errorf("ascii mark = %s", m)
 	}
 }

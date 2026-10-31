@@ -15,6 +15,7 @@ type Counts struct {
 	Sessions int `json:"Agents"`
 	NeedsYou int
 	Runaway  int
+	Handoff  int
 	Done     int
 	Working  int
 	Quiet    int
@@ -54,16 +55,16 @@ func style(fg, bgc string) string { return "#[fg=" + fg + "]#[bg=" + bgc + "]" }
 type Opts struct {
 	// Compact is the terse pre-overhaul form (bar.style = "compact").
 	Compact bool
-	// ASCII swaps ⚑ ▲ ✓ for ! ^ + (ui.glyphs = "ascii").
+	// ASCII swaps ⚑ ▲ ✓ ⇄ for ! ^ + <> (ui.glyphs = "ascii").
 	ASCII bool
 }
 
-// Glyphs returns the flag, runaway and done marks.
-func Glyphs(ascii bool) (flag, tri, check string) {
+// Glyphs returns the flag, runaway, done and handoff marks.
+func Glyphs(ascii bool) (flag, tri, check, swap string) {
 	if ascii {
-		return "!", "^", "+"
+		return "!", "^", "+", "<>"
 	}
-	return "⚑", "▲", "✓"
+	return "⚑", "▲", "✓", "⇄"
 }
 
 // Bar renders the status-right segment: one labeled block per non-zero
@@ -72,7 +73,7 @@ func Bar(c Counts, sp Spend, o Opts) string {
 	if o.Compact {
 		return Tmux(c, sp)
 	}
-	flag, tri, check := Glyphs(o.ASCII)
+	flag, tri, check, swap := Glyphs(o.ASCII)
 	var b strings.Builder
 	block := func(fg, bgc, text string) {
 		fmt.Fprintf(&b, "%s %s #[default]", style(fg, bgc), text)
@@ -86,6 +87,9 @@ func Bar(c Counts, sp Spend, o Opts) string {
 	}
 	if c.Runaway > 0 {
 		block("colour203", "colour52", fmt.Sprintf("%s %d runaway", tri, c.Runaway))
+	}
+	if c.Handoff > 0 {
+		block(cyan, bg, fmt.Sprintf("%s %d handoff", swap, c.Handoff))
 	}
 	if c.Done > 0 {
 		block("colour114", "colour22", fmt.Sprintf("%s %d done", check, c.Done))
@@ -127,6 +131,9 @@ func Tmux(c Counts, sp Spend) string {
 	}
 	if c.Runaway > 0 {
 		fmt.Fprintf(&b, "%s $! %d %s ", style(white, red), c.Runaway, style(grey, bg))
+	}
+	if c.Handoff > 0 {
+		fmt.Fprintf(&b, "%s⇄%d ", style(cyan, bg), c.Handoff)
 	}
 	if c.Done > 0 {
 		fmt.Fprintf(&b, "%s✓%d ", style(cyan, bg), c.Done)
@@ -176,8 +183,8 @@ func redactedText(sp Spend, text string) string {
 
 // Text renders the counts for a terminal.
 func Text(c Counts) string {
-	return fmt.Sprintf("%d sessions: %d needs-you, %d runaway, %d done, %d working, %d quiet, %d idle",
-		c.Sessions, c.NeedsYou, c.Runaway, c.Done, c.Working, c.Quiet, c.Idle)
+	return fmt.Sprintf("%d sessions: %d needs-you, %d runaway, %d handoff, %d done, %d working, %d quiet, %d idle",
+		c.Sessions, c.NeedsYou, c.Runaway, c.Handoff, c.Done, c.Working, c.Quiet, c.Idle)
 }
 
 func noun(n int, word string) string {

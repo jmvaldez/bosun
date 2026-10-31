@@ -30,6 +30,8 @@
 
 **Quiet**: a `working` session with no activity between tool calls. A long single tool call is not quiet.
 
+**Handoff suggested**: a `done` or `idle` session whose context fill has reached `handoff.suggest_at` (default 70%). Advisory: it shows as `⇄ handoff`, stays in the jump queue, and is never a runaway.
+
 **Pace**: today's spend so far divided by the typical cumulative spend at the same clock time.
 
 **Baseline day**: a past day with spend greater than zero, inside the pace window, excluding today.

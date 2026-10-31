@@ -24,7 +24,7 @@ type Options struct {
 	PopupKey string
 	// SpendKey opens the spend view (prefix + $ by default); empty binds nothing.
 	SpendKey string
-	// ASCII uses ! ^ + on the tabs instead of ⚑ ▲ ✓ (ui.glyphs = "ascii").
+	// ASCII uses ! ^ + <> on the tabs instead of ⚑ ▲ ✓ ⇄ (ui.glyphs = "ascii").
 	ASCII bool
 }
 
@@ -33,16 +33,17 @@ type Options struct {
 func Header(version string) string { return "# bosun " + version }
 
 // WinMark is the tab marker format: a colored glyph after the window name for
-// the three states that want you, nothing for working or idle. Each style block
+// the four states that want you, nothing for working or idle. Each style block
 // carries one attribute so no comma sits inside a conditional branch (L-05).
 func WinMark(ascii bool) string {
-	flag, tri, check := "⚑", "▲", "✓"
+	flag, tri, check, swap := "⚑", "▲", "✓", "⇄"
 	if ascii {
-		flag, tri, check = "!", "^", "+"
+		flag, tri, check, swap = "!", "^", "+", "<>"
 	}
 	return "#{?#{==:#{@bosun-wait},needs-you}, #[fg=colour214]" + flag + "#[default]," +
 		"#{?#{==:#{@bosun-wait},runaway}, #[fg=colour203]" + tri + "#[default]," +
-		"#{?#{==:#{@bosun-wait},done}, #[fg=colour114]" + check + "#[default],}}}"
+		"#{?#{==:#{@bosun-wait},handoff}, #[fg=colour51]" + swap + "#[default]," +
+		"#{?#{==:#{@bosun-wait},done}, #[fg=colour114]" + check + "#[default],}}}}"
 }
 
 // Generate returns the conf text, following the generated-conf rules in

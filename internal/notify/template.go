@@ -194,6 +194,13 @@ func Render(r Request) (Message, error) {
 		}
 		m.Body = fmt.Sprintf("today %s of %s", usd(*r.USD), usd(*r.CapUSD))
 		m.Line2 = ackLine(r)
+	case Handoff:
+		m.Title, m.Icon = "bosun · handoff suggested", iconWarn
+		if r.CtxPct == nil {
+			return m, missing(r.Kind, "ctx")
+		}
+		m.Body = fmt.Sprintf("%s · ctx %.0f%% · press h in the popup", clean(firstNonEmpty(r.Task, r.Repo, "a session"), 60), *r.CtxPct)
+		m.Line2 = ackLine(r)
 	default:
 		return m, fmt.Errorf("notify: no template for kind %q", r.Kind)
 	}

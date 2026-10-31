@@ -29,11 +29,12 @@ const (
 	Quiet           Kind = "quiet"
 	DailyPace       Kind = "daily_pace"
 	DailyBudget     Kind = "daily_budget"
+	Handoff         Kind = "handoff"
 )
 
 // Kinds must hold every Kind: ParseArgs rejects any kind not listed, and the
 // render test requires a case for each.
-var Kinds = []Kind{NeedsYou, Done, Failed, SubagentRuntime, SubagentCost, SessionCost, Quiet, DailyPace, DailyBudget}
+var Kinds = []Kind{NeedsYou, Done, Failed, SubagentRuntime, SubagentCost, SessionCost, Quiet, DailyPace, DailyBudget, Handoff}
 
 // Detail values for a needs-you notice.
 var details = []string{"permission prompt", "input needed", "dialog"}
@@ -62,6 +63,7 @@ type Request struct {
 	Step      *float64       // session_cost
 	Ratio     *float64       // daily_pace
 	CapUSD    *float64       // daily_budget
+	CtxPct    *float64       // handoff
 	Estimated bool
 
 	// Where, Waited, Tool, Target and Question are filled by the dispatcher at
@@ -129,6 +131,7 @@ func (r Request) Args() []string {
 	f("--step", r.Step)
 	f("--ratio", r.Ratio)
 	f("--cap", r.CapUSD)
+	f("--ctx", r.CtxPct)
 	d := func(k string, v *time.Duration) {
 		if v != nil {
 			add(k, v.String())
@@ -213,6 +216,8 @@ func ParseArgs(args []string) (Request, error) {
 			r.Ratio, err = parseF(v)
 		case "--cap":
 			r.CapUSD, err = parseF(v)
+		case "--ctx":
+			r.CtxPct, err = parseF(v)
 		case "--duration":
 			r.Duration, err = parseD(v)
 		case "--limit-duration":

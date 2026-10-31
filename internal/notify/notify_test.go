@@ -41,6 +41,8 @@ func TestEveryKindRendersRealValuesFromFlags(t *testing.T) {
 		{"quiet", Request{Kind: Quiet, Duration: dur(5*time.Minute + 30*time.Second)}, "a session: no activity for 5m30s"},
 		{"daily_pace", Request{Kind: DailyPace, USD: f64(61.75), Ratio: f64(1.54)}, "today $61.75, 1.5x typical"},
 		{"daily_budget", Request{Kind: DailyBudget, USD: f64(50.4), CapUSD: f64(50)}, "today $50.40 of $50.00"},
+		{"handoff", Request{Kind: Handoff, Task: "ABC-142", CtxPct: f64(78)}, "ABC-142 · ctx 78% · press h in the popup"},
+		{"handoff without a task", Request{Kind: Handoff, CtxPct: f64(70.4)}, "a session · ctx 70% · press h in the popup"},
 	}
 	covered := map[Kind]bool{}
 	for _, tt := range tests {
@@ -73,7 +75,7 @@ func TestMissingValuesAreErrorsNeverZeros(t *testing.T) {
 	for _, r := range []Request{
 		{Kind: NeedsYou}, {Kind: NeedsYou, Detail: "free text from Claude"},
 		{Kind: Done}, {Kind: Failed}, {Kind: SubagentRuntime, Agent: "x"}, {Kind: SubagentCost, Agent: "x", USD: f64(1)},
-		{Kind: SessionCost}, {Kind: Quiet}, {Kind: DailyPace, USD: f64(1)}, {Kind: DailyBudget, CapUSD: f64(1)},
+		{Kind: SessionCost}, {Kind: Quiet}, {Kind: DailyPace, USD: f64(1)}, {Kind: DailyBudget, CapUSD: f64(1)}, {Kind: Handoff},
 	} {
 		if _, err := Render(r); !errors.Is(err, ErrMissing) {
 			t.Errorf("%+v: err = %v, want ErrMissing", r, err)

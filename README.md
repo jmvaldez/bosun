@@ -17,6 +17,9 @@ that needs you.
   with their turn, usually within a second. `prefix + a` jumps to the oldest.
 - **Catch runaways early.** Alerts fire for long or expensive subagents, cost
   steps, stalled sessions, and days running above your usual spend.
+- **Hand off before the context fills.** A done or idle session past 70% of
+  its context window shows `⇄ handoff` in the bar and popup. It is a
+  suggestion, not a runaway, and the session stays in the jump queue.
 - **See what each one is doing.** `prefix + W` opens a popup with each
   session's task, repo, spend, and live activity (`running go test ./...`,
   `editing ui/view.go`, `waiting on 2 subagents`).

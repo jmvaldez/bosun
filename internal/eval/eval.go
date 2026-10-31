@@ -375,6 +375,8 @@ func summarize(f live.File, panes []tmux.Pane, alerts rules.Store, now time.Time
 			r.Counts.NeedsYou++
 		case live.Runaway:
 			r.Counts.Runaway++
+		case live.Handoff:
+			r.Counts.Handoff++
 		case live.Done:
 			r.Counts.Done++
 		case live.Working:

@@ -122,8 +122,8 @@ func TestFormatCoversEveryDocumentedKey(t *testing.T) {
 			t.Errorf("missing %s", k)
 		}
 	}
-	if n := len(Keys()); n != 32 { // SPEC lists 28; D-27 and the visual overhaul add tmux.spend_key, ui.glyphs, bar.style, privacy.show_text
-		t.Errorf("have %d keys, want 32", n)
+	if n := len(Keys()); n != 37 { // SPEC lists 28; D-27 and the visual overhaul add tmux.spend_key, ui.glyphs, bar.style, privacy.show_text; D-34 adds the five handoff keys
+		t.Errorf("have %d keys, want 37", n)
 	}
 }
 
@@ -133,5 +133,24 @@ func TestLoadReadsFile(t *testing.T) {
 	c, _, err := Load(p)
 	if err != nil || c.Tmux.PopupKey != "P" {
 		t.Fatalf("c=%+v err=%v", c.Tmux, err)
+	}
+}
+
+func TestHandoffKeys(t *testing.T) {
+	c, res, err := Parse([]byte("[handoff]\nsuggest_at = 0\nprompt = \"write it\"\ndir = \"/tmp/h\"\ndeadline = \"2m\"\nauto = true\n"))
+	if err != nil || len(res.Unknown)+len(res.Problems) != 0 {
+		t.Fatalf("err=%v res=%+v", err, res)
+	}
+	want := Handoff{SuggestAt: 0, Prompt: "write it", Dir: "/tmp/h", Deadline: 2 * time.Minute, Auto: true}
+	if c.Handoff != want {
+		t.Errorf("handoff = %+v, want %+v", c.Handoff, want)
+	}
+	d := Default().Handoff
+	if d.SuggestAt != 0.70 || d.Deadline != 5*time.Minute || d.Auto {
+		t.Errorf("defaults = %+v", d)
+	}
+	_, res, _ = Parse([]byte("[handoff]\nsuggest_at = 1.5\n"))
+	if len(res.Problems) != 1 {
+		t.Errorf("suggest_at above 1 should be a problem: %+v", res)
 	}
 }

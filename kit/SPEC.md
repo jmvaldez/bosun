@@ -164,7 +164,7 @@ Tests and demos set the `BOSUN_*_DIR` vars. They never set `XDG_*` for any proce
 - Hooks win over `agents.json` on a live session. `agents.json` absence plus `kill -0` plus a start token mismatch drop dead sessions.
 - Subagents: `running` and `ended`, paired on `agent_id`. A stop with no matching start is ignored.
 - Main vs subagent: key on `agent_id` presence, never `agent_type`.
-- Display precedence: `needs-you` > `runaway` > `done` > `working` > `idle`. Runaway is an active, undismissed runaway alert, not a fifth state.
+- Display precedence: `needs-you` > `runaway` > `handoff` > `done` > `working` > `quiet` > `idle`. Runaway is an active, undismissed runaway alert, not a fifth state. `handoff` is the advisory `handoff` rule on a `done` or `idle` session; `quiet` is the `quiet` rule on a `working` one (D-27, D-34).
 
 ### Rules
 
@@ -178,6 +178,7 @@ Dismissing (`x` in the popup, `bosun ack ID` or `bosun ack --all`) hides an acti
 | `quiet` | 5m | session | `working`, gap after `PostToolUse` with no next `PreToolUse` |
 | `subagent_cost` | 2.00 | subagent | transcript estimate, always `est.` |
 | `session_cost` | 10.00 | session | `OwnUSD` crosses each next multiple |
+| `handoff` | 0.70 | session | `done` or `idle`, and the context fill is at least `handoff.suggest_at`; advisory, never a runaway (D-34) |
 | `daily_pace` | on | account and day | see below |
 | `daily_budget` | off (0) | account and day | today crosses an absolute cap |
 
@@ -263,6 +264,7 @@ Parts appear only when nonzero, on `colour233`:
 |---|---|
 | needs-you pill | ` ! N ` black on yellow `colour220` (1 to 2), orange `colour208` (3+) |
 | runaway pill | ` $! N ` white on red `colour160` |
+| handoff | `⇄N` cyan `colour51` (`<>N` with ascii glyphs) |
 | done | `✓N` cyan `colour51` |
 | working | `●N` grey `colour245` |
 | today's spend | grey; amber `colour214` at pace amber; bold red `colour196` at pace alert or budget; `$X/$cap` when `rules.daily_budget` is set; ` est.` when the estimated share is over zero |
@@ -271,7 +273,7 @@ Empty only with zero agents and $0 today.
 
 ### Tab marker
 
-`@bosun-wait` window option holds the window's top state. Rendered through `@bosun-win-mark`: ` ! ` yellow, ` $! ` red, `✓` cyan, `●` grey, unset for idle. Written only by the evaluator, only on change. Hooks never call tmux.
+`@bosun-wait` window option holds the window's top state. Rendered through `@bosun-win-mark`: ` ! ` yellow, ` $! ` red, `⇄` cyan, `✓` cyan, `●` grey, unset for idle. Written only by the evaluator, only on change. Hooks never call tmux.
 
 ### Popup (prefix + W, `bosun ui`)
 
@@ -408,6 +410,11 @@ Jump walk: start on `work:3.0`, press 1 `work:1.0`, press 2 `home:1.0`, press 3 
 | `ui.peek` | `true` | allow popup `v` to read the pending tool call from the transcript |
 | `ui.interrupt_keys` | `"Escape"` | keys popup `!` sends after confirmation |
 | `run.worktree_dir` | `""` | parent dir for `run --worktree`; empty means beside the main worktree |
+| `handoff.suggest_at` | `0.70` | context fill (0 to 1) at which a done or idle session is offered a handoff; `0` is off |
+| `handoff.prompt` | `""` | inline override of the handoff prompt template |
+| `handoff.dir` | `""` | where the handoff doc goes outside a git repo |
+| `handoff.deadline` | `"5m"` | how long a handoff waits for the doc |
+| `handoff.auto` | `false` | start the handoff without a key press |
 
 ### Doctor checks
 
