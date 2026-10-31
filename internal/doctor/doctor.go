@@ -89,6 +89,7 @@ func Run(e Env) []Check {
 	e.checkVersionSkew(add, hb)
 	e.checkStatusLine(add, settings)
 	e.checkSessionsSeen(add)
+	e.checkContextField(add)
 	e.checkTmux(add)
 	e.checkConfig(add)
 	e.checkIdentity(add)

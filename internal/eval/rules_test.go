@@ -429,3 +429,21 @@ func TestForkInheritanceSurvivesCompactAndResume(t *testing.T) {
 		})
 	}
 }
+
+func TestContextFillReachesTheView(t *testing.T) {
+	r := newRig(t).withRules()
+	r.emit("aaa", "%1", "UserPromptSubmit")
+	res := Evaluate(r.d)
+	if len(res.Sessions) != 1 || res.Sessions[0].CtxPct != nil {
+		t.Fatalf("no snapshot should leave ctx unknown, got %+v", res.Sessions)
+	}
+	r.writeJSON(r.d.Ad.Paths.Session("aaa")+"/statusline.json", map[string]any{"session_id": "aaa", "cost_usd": 1.0, "ctx_pct": 41.5})
+	res = Evaluate(r.d)
+	if p := res.Sessions[0].CtxPct; p == nil || *p != 41.5 {
+		t.Errorf("ctx_pct = %v, want 41.5", p)
+	}
+	r.writeJSON(r.d.Ad.Paths.Session("aaa")+"/statusline.json", map[string]any{"session_id": "aaa", "cost_usd": 1.0})
+	if res = Evaluate(r.d); res.Sessions[0].CtxPct != nil {
+		t.Error("a snapshot without the field must read as unknown, not the last value")
+	}
+}

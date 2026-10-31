@@ -195,7 +195,12 @@ func (m *Model) hints(inner int) string {
 
 // ---- status view
 
-type agentCols struct{ task, repo, tmux, state, wait, usd int }
+// agentCols are the column widths of the agents table. ctx is 0 when the CTX
+// column is dropped.
+type agentCols struct{ task, repo, tmux, state, wait, ctx, usd int }
+
+// ctxWidth is the CTX column ("100%" is the widest cell).
+const ctxWidth = 4
 
 func agentWidths(inner int) agentCols {
 	c := agentCols{task: 16, repo: 14, tmux: 11, wait: 6, usd: 9}
@@ -207,8 +212,16 @@ func agentWidths(inner int) agentCols {
 	case inner < 90:
 		c.task, c.repo, c.tmux = 12, 10, 9
 	}
-	// icon(2) + sep + task + sep + repo + sep + tmux + sep + state + sep + wait + sep + usd
+	// The CTX column is the first to go when the popup is narrow.
+	if inner >= 90 {
+		c.ctx = ctxWidth
+	}
+	// icon(2) + sep + task + sep + repo + sep + tmux + sep + state + sep + wait + sep + usd,
+	// plus sep + ctx when shown
 	c.state = inner - (2 + 1 + c.task + 1 + c.repo + 1 + c.tmux + 1 + 1 + c.wait + 1 + c.usd)
+	if c.ctx > 0 {
+		c.state -= 1 + c.ctx
+	}
 	if c.state < 14 {
 		c.state = 14
 	}
@@ -246,7 +259,7 @@ func (m *Model) agentsBody(inner, rows int) []string {
 		return []string{"", m.sty(dim, "  No Claude Code agents running")}
 	}
 	c := agentWidths(inner)
-	head := "  " + " " + Pad("TASK", c.task) + " " + Pad("REPO", c.repo) + " " + Pad("TMUX", c.tmux) + " " + Pad("STATE", c.state) + " " + Pad("TIME", c.wait) + " " + PadLeft("$ TODAY", c.usd)
+	head := "  " + " " + Pad("TASK", c.task) + " " + Pad("REPO", c.repo) + " " + Pad("TMUX", c.tmux) + " " + Pad("STATE", c.state) + " " + Pad("TIME", c.wait) + " " + m.ctxHead(c) + PadLeft("$ TODAY", c.usd)
 	lines := []string{m.sty(dim, head)}
 	selRows := m.agentRows()
 	var body []string
@@ -413,7 +426,35 @@ func (m *Model) sessionRow(v eval.View, c agentCols) string {
 	}
 	return m.sty(col, icon) + "  " + taskCell + " " + Fit(shortRepo(v.Repo), c.repo) + " " +
 		m.sty(cGrey, Fit(clean.Text(tmuxCell(v, m.data.Sessions)), c.tmux)) + " " + m.sty(scol, Fit(text, c.state)) + " " + m.sty(wcol, Fit(m.waitCell(v), c.wait)) + " " +
-		PadLeft(usdCell, c.usd)
+		m.ctxCell(v, c) + PadLeft(usdCell, c.usd)
+}
+
+// ctxHead is the CTX column header with its separator, or "" when dropped.
+func (m *Model) ctxHead(c agentCols) string {
+	if c.ctx == 0 {
+		return ""
+	}
+	return PadLeft("CTX", c.ctx) + " "
+}
+
+// ctxCell is the context fill with its separator: `41%`, or `—` when unknown.
+// Default below 50%, amber from 50%, red from 70% (the handoff threshold).
+func (m *Model) ctxCell(v eval.View, c agentCols) string {
+	if c.ctx == 0 {
+		return ""
+	}
+	if v.CtxPct == nil {
+		return m.sty(cGrey, PadLeft("—", c.ctx)) + " "
+	}
+	pct := *v.CtxPct
+	cell := PadLeft(fmt.Sprintf("%.0f%%", pct), c.ctx)
+	switch {
+	case pct >= 70:
+		cell = m.sty(cRed, cell)
+	case pct >= 50:
+		cell = m.sty(cAmber, cell)
+	}
+	return cell + " "
 }
 
 // stateText is `<state> · <detail>` and the colour it is drawn in. With
@@ -532,5 +573,5 @@ func (m *Model) subRow(parent eval.View, s eval.SubView, c agentCols) string {
 	pad := strings.Repeat(" ", 3)
 	taskW := c.task
 	return pad + Fit(left, taskW) + " " + m.sty(cGrey, Fit(shortRepo(parent.Repo), c.repo)) + " " + strings.Repeat(" ", c.tmux) + " " +
-		m.sty(col, Fit(state, c.state)) + " " + strings.Repeat(" ", c.wait) + " " + m.sty(col, PadLeft(cost, c.usd))
+		m.sty(col, Fit(state, c.state)) + " " + strings.Repeat(" ", c.wait) + " " + strings.Repeat(" ", c.ctx+min(c.ctx, 1)) + m.sty(col, PadLeft(cost, c.usd))
 }

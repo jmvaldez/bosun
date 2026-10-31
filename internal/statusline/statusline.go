@@ -42,6 +42,10 @@ type Snapshot struct {
 	Model      string  `json:"model,omitempty"`
 	Version    string  `json:"version,omitempty"`
 	DurationMS int64   `json:"duration_ms,omitempty"`
+	// CtxPct is the context fill (0-100) the status line reported. A pointer so
+	// that absent stays absent and never reads as 0.
+	CtxPct  *float64 `json:"ctx_pct,omitempty"`
+	CtxSize int64    `json:"ctx_size,omitempty"`
 }
 
 // stdinView lists the only status line keys bosun decodes. Everything else,
@@ -56,6 +60,10 @@ type stdinView struct {
 		Total      *float64 `json:"total_cost_usd"`
 		DurationMS int64    `json:"total_duration_ms"`
 	} `json:"cost"`
+	ContextWindow struct {
+		UsedPct *float64 `json:"used_percentage"`
+		Size    int64    `json:"context_window_size"`
+	} `json:"context_window"`
 }
 
 // Run records the snapshot and runs argv (the words after "--"), returning the
@@ -103,6 +111,7 @@ func record(ad platform.Adapters, raw []byte) {
 		V: 1, TS: now, SessionID: v.SessionID, FirstUSD: prev.FirstUSD, FirstTS: prev.FirstTS,
 		CostUSD: *v.Cost.Total, BankedUSD: banked, MaxUSD: max,
 		Model: clip(v.Model.ID), Version: clip(v.Version), DurationMS: v.Cost.DurationMS,
+		CtxPct: v.ContextWindow.UsedPct, CtxSize: v.ContextWindow.Size,
 	}
 	if snap.FirstTS == "" && prev.TS == "" {
 		snap.FirstUSD, snap.FirstTS = *v.Cost.Total, now

@@ -576,3 +576,44 @@ func TestTmuxKeysMessageNamesWhatWasChecked(t *testing.T) {
 		t.Errorf("spend key empty: %+v", c)
 	}
 }
+
+func TestContextFieldCheck(t *testing.T) {
+	write := func(r *rig, id, version string, ctx *float64, age time.Duration) {
+		os.MkdirAll(r.env.Paths.Session(id), 0o755)
+		snap := map[string]any{"v": 1, "session_id": id, "version": version, "ts": now.Format(time.RFC3339Nano)}
+		if ctx != nil {
+			snap["ctx_pct"] = *ctx
+		}
+		b, _ := json.Marshal(snap)
+		p := r.env.Paths.Session(id) + "/statusline.json"
+		os.WriteFile(p, b, 0o644)
+		os.Chtimes(p, now.Add(-age), now.Add(-age))
+	}
+	pct := 41.0
+	const a, b = "aaaaaaaa-0000-0000-0000-00000000000a", "bbbbbbbb-0000-0000-0000-00000000000b"
+
+	r := newRig(t)
+	if c := r.checks()["context-field"]; c.Status != OK || c.Detail != "no status line data yet" {
+		t.Errorf("no snapshots: %+v", c)
+	}
+
+	r = newRig(t)
+	write(r, a, "2.1.309", &pct, time.Minute)
+	write(r, b, "2.1.309", nil, 2*time.Minute)
+	if c := r.checks()["context-field"]; c.Status != OK || c.Detail != "context fill seen (Claude Code 2.1.309)" {
+		t.Errorf("one snapshot has it: %+v", c)
+	}
+
+	r = newRig(t)
+	write(r, a, "2.1.309", nil, time.Minute)
+	write(r, b, "2.2.0", nil, 2*time.Minute)
+	if c := r.checks()["context-field"]; c.Status != Warn || c.Detail != "Claude Code 2.1.309 sends no context_window; handoff suggestions are off" {
+		t.Errorf("none has it: %+v", c)
+	}
+
+	r = newRig(t)
+	write(r, a, "2.1.100", nil, time.Minute)
+	if c := r.checks()["context-field"]; c.Status != OK {
+		t.Errorf("a version before the field existed should not warn: %+v", c)
+	}
+}

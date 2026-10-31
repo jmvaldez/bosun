@@ -79,9 +79,15 @@ func (d Deps) evalRules(f *live.File, now time.Time) ruleResult {
 }
 
 // sessionConds adds the conditions that hold for one live session: subagent
-// runtime and cost, quiet, and session cost.
+// runtime and cost, quiet, and session cost. It reads the session's status line
+// snapshot once and also records the context fill from it.
 func (d Deps) sessionConds(s *live.Session, now time.Time, add func(rules.Cond, ruleInfo)) {
 	cfg := d.Cfg
+	snap, snapOK := d.readSnap(s)
+	s.CtxPct = nil
+	if pct, ok := snap.Ctx(); snapOK && ok {
+		s.CtxPct = &pct
+	}
 	for aid, sub := range s.Subs {
 		scope := s.ID + "/" + aid
 		age := now.Sub(sub.Start)
@@ -109,7 +115,8 @@ func (d Deps) sessionConds(s *live.Session, now time.Time, add func(rules.Cond, 
 		}
 	}
 	if step := cfg.Rules.SessionCost; step > 0 {
-		if own, ok := d.sessionOwn(s); ok {
+		if snapOK {
+			own := ledger.SnapshotOwnUSD(snap, s.Forked)
 			if level := int(own / step); level >= 1 {
 				add(rules.Cond{Rule: rules.SessionCost, Scope: s.ID, Session: s.ID, Level: level,
 					Detail: "session " + smallUSD(own)},
@@ -217,14 +224,15 @@ func (d Deps) retractCleared(f live.File, before map[string]string) {
 	}
 }
 
-// sessionOwn is the session's own spend from its status line snapshot;
-// ledger.SnapshotOwnUSD makes the fork decision, shared with notices.
-func (d Deps) sessionOwn(s *live.Session) (float64, bool) {
+// readSnap is the session's status line snapshot; ok is false when it is
+// missing or belongs to another session. ledger.SnapshotOwnUSD makes the fork
+// decision for spend, shared with notices.
+func (d Deps) readSnap(s *live.Session) (statusline.Snapshot, bool) {
 	snap, ok := statusline.ReadSnapshot(d.Ad.Paths.StatuslineSnap(s.ID))
 	if !ok || snap.SessionID != s.ID {
-		return 0, false
+		return statusline.Snapshot{}, false
 	}
-	return ledger.SnapshotOwnUSD(snap, s.Forked), true
+	return snap, true
 }
 
 // subagentTranscript is <dir>/<sid>/subagents/agent-<aid>.jsonl beside the main

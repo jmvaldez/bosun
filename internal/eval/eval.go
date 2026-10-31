@@ -90,6 +90,8 @@ type View struct {
 	Subs       []SubView `json:"subs,omitempty"`
 	Edits      int       `json:"edits"`
 	Quiet      string    `json:"quiet,omitempty"`
+	// CtxPct is the context fill (0-100); absent when unknown.
+	CtxPct *float64 `json:"ctx_pct,omitempty"`
 }
 
 type Result struct {
@@ -341,7 +343,7 @@ func summarize(f live.File, panes []tmux.Pane, alerts rules.Store, now time.Time
 			Where: where[s.Loc.Pane], Pane: s.Loc.Pane, ServerPID: s.Loc.SPID, PID: s.PID, StartTok: s.StartTok,
 			Cwd: s.Cwd, Transcript: s.Transcript, Repo: s.Repo, Task: s.Task, WaitingFor: s.WaitingFor, WaitKind: s.WaitKind, LastTool: s.LastTool,
 			ToolOpen: s.ToolOpen, Background: s.BGPending,
-			Subagents: len(s.Subs), SubsEnded: s.SubsEnded, Edits: s.Edits,
+			Subagents: len(s.Subs), SubsEnded: s.SubsEnded, Edits: s.Edits, CtxPct: s.CtxPct,
 		}
 		if s.ToolOpen {
 			v.ToolSince = s.LastToolAt

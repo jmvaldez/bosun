@@ -221,3 +221,58 @@ func TestApportionedRemainderFoldsIntoByModel(t *testing.T) {
 }
 
 func at(h, m int) time.Time { return time.Date(2026, 10, 22, h, m, 0, 0, time.UTC) }
+
+// One session with an unknown fill, one at 41% and one at 78%: the CTX column
+// shows `—`, the plain figure and the red one.
+func ctxModel() *Model {
+	d := mockData()
+	d.Sessions = append([]eval.View(nil), d.Sessions...)
+	at := func(p float64) *float64 { return &p }
+	d.Sessions[0].CtxPct = at(41)
+	d.Sessions[2].CtxPct = at(78)
+	m := New(Options{Peek: true, ShowText: true}, &mockActions{})
+	m.SetData(d)
+	return m
+}
+
+func TestGoldenStatusViewContextFill(t *testing.T) {
+	for _, w := range []int{180, 100} {
+		f := frame(ctxModel(), w, 24)
+		golden(t, fmt.Sprintf("status_ctx_%d.golden", w), f)
+		for i, l := range strings.Split(f, "\n") {
+			if Width(l) != w {
+				t.Errorf("width %d line %d is %d columns", w, i, Width(l))
+			}
+		}
+	}
+}
+
+func TestContextCellColour(t *testing.T) {
+	m := New(Options{Color: true}, &mockActions{})
+	c := agentCols{ctx: ctxWidth}
+	at := func(p float64) eval.View { return eval.View{CtxPct: &p} }
+	for _, tc := range []struct {
+		v    eval.View
+		want string
+	}{
+		{at(41), " 41% "},
+		{at(50), cAmber + " 50%"},
+		{at(69), cAmber + " 69%"},
+		{at(70), cRed + " 70%"},
+		{at(100), cRed + "100%"},
+		{eval.View{}, cGrey + "   —"},
+	} {
+		if got := m.ctxCell(tc.v, c); !strings.HasPrefix(got, tc.want) {
+			t.Errorf("ctxCell = %q, want prefix %q", got, tc.want)
+		}
+	}
+	if got := m.ctxCell(at(90), agentCols{}); got != "" {
+		t.Errorf("dropped column rendered %q", got)
+	}
+}
+
+func TestContextColumnDropsWhenNarrow(t *testing.T) {
+	if agentWidths(89).ctx != 0 || agentWidths(90).ctx == 0 {
+		t.Error("CTX column should drop below 90 columns")
+	}
+}

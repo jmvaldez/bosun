@@ -127,6 +127,9 @@ type Session struct {
 	// session or subagent alert except quiet. QuietAlert is the quiet rule on its own, shown as its own state.
 	Runaway    bool `json:"runaway,omitempty"`
 	QuietAlert bool `json:"quiet_alert,omitempty"`
+	// CtxPct is the context fill from the status line snapshot, refreshed each
+	// evaluation; nil is unknown, never 0.
+	CtxPct *float64 `json:"ctx_pct,omitempty"`
 }
 
 // Display is the state shown on every surface: needs-you hides any alert;
