@@ -19,6 +19,12 @@ type Runner interface {
 	Run(timeout time.Duration, name string, args ...string) ([]byte, error)
 }
 
+// InputRunner is a Runner that can also feed the child's standard input.
+type InputRunner interface {
+	Runner
+	RunInput(timeout time.Duration, stdin string, name string, args ...string) ([]byte, error)
+}
+
 // Streamer reads a long-running command's output line by line. onLine returns
 // true to stop; the command is killed when it does, or when timeout elapses.
 type Streamer interface {
@@ -30,10 +36,18 @@ type Exec struct{}
 
 // Run kills the child when timeout elapses. WaitDelay bounds the wait for the
 // output pipes, which a grandchild holding stdout would otherwise keep open.
-func (Exec) Run(timeout time.Duration, name string, args ...string) ([]byte, error) {
+func (e Exec) Run(timeout time.Duration, name string, args ...string) ([]byte, error) {
+	return e.RunInput(timeout, "", name, args...)
+}
+
+// RunInput is Run with stdin fed to the child; empty stdin means none.
+func (Exec) RunInput(timeout time.Duration, stdin string, name string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
+	}
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &limitedWriter{w: &errb, n: 2048}

@@ -558,3 +558,48 @@ func TestTmuxNewWindowDirIsNotFormatExpanded(t *testing.T) {
 		})
 	}
 }
+
+// TestPasteSubmitReachesTheProgram proves a multi-line prompt arrives as one
+// bracketed paste and that only the Enter key afterwards submits it.
+func TestPasteSubmitReachesTheProgram(t *testing.T) {
+	s := newTserver(t)
+	got, ready := filepath.Join(s.root, "raw"), filepath.Join(s.root, "ready")
+	// 30 bytes: both markers (6 each), the 17-byte text and the final CR.
+	prog := filepath.Join(s.root, "reader.sh")
+	script := fmt.Sprintf("printf '\\033[?2004h'\nstty raw -echo\n: > %s\ndd bs=1 count=30 of=%s 2>/dev/null\n", ready, got)
+	if err := os.WriteFile(prog, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	pane := strings.TrimSpace(s.tmux("new-window", "-P", "-F", "#{pane_id}", "-n", "paste", "sh "+prog))
+	deadline := time.Now().Add(5 * time.Second)
+	for _, err := os.Stat(ready); err != nil; _, err = os.Stat(ready) {
+		if time.Now().After(deadline) {
+			t.Fatal("the pane program never became ready")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	c := tmux.Client{Runner: runner.Exec{}, Socket: s.sock}
+	if err := c.PasteText(pane, "line one\nline two"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if b, _ := os.ReadFile(got); len(b) == 0 || strings.HasSuffix(string(b), "\r") {
+		t.Fatalf("Enter seen before it was sent: %q", b)
+	}
+	if err := c.SendKeys(pane, []string{"C-m"}); err != nil {
+		t.Fatal(err)
+	}
+	var raw []byte
+	for time.Now().Before(deadline) {
+		if raw, _ = os.ReadFile(got); strings.HasSuffix(string(raw), "\r") {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	// tmux turns each pasted newline into CR, so the lines are told apart by the
+	// paste markers: both sit inside them and only the final CR follows.
+	want := "\x1b[200~line one\rline two\x1b[201~\r"
+	if string(raw) != want {
+		t.Errorf("program read %q, want %q", raw, want)
+	}
+}

@@ -165,3 +165,36 @@ func TestWindowDirFallsBackToRoot(t *testing.T) {
 		t.Errorf("windowDir() = %q, want /", got)
 	}
 }
+
+type inputRunner struct {
+	fakeRunner
+	stdin string
+}
+
+func (f *inputRunner) RunInput(timeout time.Duration, stdin string, name string, args ...string) ([]byte, error) {
+	f.stdin = stdin
+	return f.Run(timeout, name, args...)
+}
+
+func TestPasteTextLoadsBufferOnStdinThenPastesBracketed(t *testing.T) {
+	f := &inputRunner{}
+	if err := (Client{Runner: f}).PasteText("%7", "a\nb"); err != nil {
+		t.Fatal(err)
+	}
+	if f.stdin != "a\nb" {
+		t.Errorf("stdin = %q", f.stdin)
+	}
+	want := [][]string{
+		{"tmux", "load-buffer", "-b", "bosun-handoff", "-"},
+		{"tmux", "paste-buffer", "-p", "-d", "-b", "bosun-handoff", "-t", "%7"},
+	}
+	if !reflect.DeepEqual(f.calls, want) {
+		t.Errorf("calls = %v, want %v", f.calls, want)
+	}
+}
+
+func TestPasteTextNeedsAnInputRunner(t *testing.T) {
+	if err := (Client{Runner: &fakeRunner{}}).PasteText("%7", "x"); err == nil {
+		t.Error("PasteText with a runner that cannot feed stdin returned nil")
+	}
+}
