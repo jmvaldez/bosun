@@ -9,7 +9,7 @@
 │ ⠋  migrations             payments-api       payments:3     editing db/migrate/0142_refund_state.sql                                                       4:00      —     $2.95 │
 │    └ · test-writer        payments-api                      subagent · 2m 40s · 9 tools                                                                                    $0.41 │
 │ ✱  tf-upgrade             infra-terraform    infra:1        quiet · no events for 6m00s (maybe stuck)                                                      —         —     $3.10 │
-│ ⇄  (no task)              pitwall            side:1         handoff · context 78% · consider a handoff                                                     —       78%     $1.45 │
+│ ⇄  (no task)              pitwall            side:1         handoff · context 78% · h to hand off                                                          —       78%     $1.45 │
 │                                                                                                                                                                                  │
 │                                                                                                                                                                                  │
 │                                                                                                                                                                                  │
@@ -20,5 +20,5 @@
 │                                                                                                                                                                                  │
 │                                                                                                                                                                                  │
 ├──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ enter jump  a oldest waiting  x ack alert  ! interrupt  d review diff  s spend for row  tab spend view  esc close                                                                │
+│ enter jump  a oldest waiting  x ack alert  ! interrupt  h hand off  d review diff  s spend for row  tab spend view  esc close                                                    │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘

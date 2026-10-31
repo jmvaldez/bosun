@@ -21,6 +21,28 @@ tmux status-interval (1 s) ──▶ bosun status --tmux ──▶ segment, tab 
 - Transcripts are ingested into SQLite for the per-prompt and per-request
   breakdown.
 
+## Handoff
+
+`bosun handoff` is a detached process with a state file at
+`sessions/<id>/handoff.json`; the evaluator only reads that file.
+
+```
+        ┌─ not submitted ──▶ failed
+writing ┼─ deadline / pane gone / cancelled / doc stale ──▶ failed
+        └─ Stop + fresh doc ──▶ launching ─┬─ launch error ──▶ failed
+                                           └─ new window ───▶ done
+```
+
+- `writing`: `panewrite.Submit` pastes the prompt; the loop polls every 500 ms.
+  Time spent in needs-you moves the deadline out.
+- `launching`: the new window is opened by the same code as `bosun run`, with
+  `BOSUN_HANDOFF_FROM=<old id>`; its SessionStart event links the two sessions.
+- `done` or `failed` appends one line (outcome, why, phase reached, durations) to
+  `handoff.jsonl`, which `bosun doctor` summarises.
+
+The file holds enums, times, ids and the doc's path. The doc's text is never
+written to bosun's dirs.
+
 ## Spend accuracy
 
 All figures are estimates at API list prices, regardless of plan.
@@ -70,6 +92,8 @@ Hot path (runs on every hook):
 Evaluation:
 
 - `eval` folds hook events into `live.json`, runs the alert rules and answers the segment, `status` and `jump`.
+- `handoff` runs the handoff state machine and locates the doc.
+- `panewrite` is the only code that writes to an agent pane.
 - `live` holds per-session state: the event fold and the `live.json` file.
 - `rules` keeps alert state, at most one alert per rule and scope.
 - `subcost` estimates what a running subagent has spent from its transcript.

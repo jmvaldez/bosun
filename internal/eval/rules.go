@@ -1,13 +1,11 @@
 package eval
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/jmvaldez/bosun/internal/handoff"
 	"github.com/jmvaldez/bosun/internal/ledger"
 	"github.com/jmvaldez/bosun/internal/live"
 	"github.com/jmvaldez/bosun/internal/notify"
@@ -74,6 +72,7 @@ func (d Deps) evalRules(f *live.File, now time.Time) ruleResult {
 	}
 
 	markRunaway(f, store)
+	d.markHandoff(f)
 	res := ruleResult{pace: st}
 	for _, a := range store.Active() {
 		res.alerts = append(res.alerts, *a)
@@ -118,7 +117,7 @@ func (d Deps) sessionConds(s *live.Session, now time.Time, add func(rules.Cond, 
 		}
 	}
 	if at := cfg.Handoff.SuggestAt; at > 0 && s.CtxPct != nil && *s.CtxPct/100 >= at &&
-		(s.State == live.Done || s.State == live.Idle) && !handoffStarted(d.Ad.Paths.Session(s.ID)) {
+		(s.State == live.Done || s.State == live.Idle) && !handoff.Read(d.Ad.Paths.Handoff(s.ID)).Begun() {
 		add(rules.Cond{Rule: rules.Handoff, Scope: s.ID, Session: s.ID, Detail: fmt.Sprintf("ctx %.0f%%", *s.CtxPct)},
 			ruleInfo{session: s, ctx: *s.CtxPct})
 	}
@@ -134,19 +133,30 @@ func (d Deps) sessionConds(s *live.Session, now time.Time, add func(rules.Cond, 
 	}
 }
 
-// handoffStarted reports whether a handoff is under way or finished for the
-// session, from the phase in its handoff.json. A missing or unreadable file
-// means none, so the suggestion stands.
-func handoffStarted(sessionDir string) bool {
-	b, err := os.ReadFile(filepath.Join(sessionDir, "handoff.json"))
-	if err != nil {
-		return false
+// markHandoff records, for each live session, where its handoff stands: the
+// phase while one is under way, whether it finished (HandedOff), and the
+// session that continues it (HandedOffTo, the reverse of the new session's
+// HandedOffFrom). The state files are the command's; this only reads them.
+func (d Deps) markHandoff(f *live.File) {
+	to := map[string]string{}
+	for id, s := range f.Sessions {
+		if s.HandedOffFrom != "" && !s.Ended {
+			to[s.HandedOffFrom] = id
+		}
 	}
-	var st struct{ Phase string }
-	if json.Unmarshal(b, &st) != nil {
-		return false
+	for id, s := range f.Sessions {
+		s.HandoffPhase, s.HandedOff, s.HandedOffTo = "", false, ""
+		if s.Ended {
+			continue
+		}
+		st := handoff.Read(d.Ad.Paths.Handoff(id))
+		switch st.Phase {
+		case handoff.PhaseWriting, handoff.PhaseLaunching:
+			s.HandoffPhase = st.Phase
+		case handoff.PhaseDone:
+			s.HandedOff, s.HandedOffTo = true, to[id]
+		}
 	}
-	return st.Phase == "writing" || st.Phase == "launching" || st.Phase == "done"
 }
 
 // markRunaway sets each session's Runaway, QuietAlert and HandoffSuggested

@@ -92,6 +92,8 @@ type View struct {
 	Quiet      string    `json:"quiet,omitempty"`
 	// CtxPct is the context fill (0-100); absent when unknown.
 	CtxPct *float64 `json:"ctx_pct,omitempty"`
+	// HandoffPhase is "writing" or "launching" while a handoff is under way.
+	HandoffPhase string `json:"handoff_phase,omitempty"`
 }
 
 type Result struct {
@@ -279,7 +281,7 @@ func (d Deps) writeMarks(f *live.File, panes []tmux.Pane) {
 	}
 	want := map[string]string{}
 	for _, s := range f.Sessions {
-		if !s.Visible() || s.Foreign || s.Display() == live.Idle {
+		if !s.Visible() || s.Foreign || s.Display() == live.Idle || s.Display() == live.HandedOff {
 			continue
 		}
 		w := windowOf[s.Loc.Pane]
@@ -343,7 +345,7 @@ func summarize(f live.File, panes []tmux.Pane, alerts rules.Store, now time.Time
 			Where: where[s.Loc.Pane], Pane: s.Loc.Pane, ServerPID: s.Loc.SPID, PID: s.PID, StartTok: s.StartTok,
 			Cwd: s.Cwd, Transcript: s.Transcript, Repo: s.Repo, Task: s.Task, WaitingFor: s.WaitingFor, WaitKind: s.WaitKind, LastTool: s.LastTool,
 			ToolOpen: s.ToolOpen, Background: s.BGPending,
-			Subagents: len(s.Subs), SubsEnded: s.SubsEnded, Edits: s.Edits, CtxPct: s.CtxPct,
+			Subagents: len(s.Subs), SubsEnded: s.SubsEnded, Edits: s.Edits, CtxPct: s.CtxPct, HandoffPhase: s.HandoffPhase,
 		}
 		if s.ToolOpen {
 			v.ToolSince = s.LastToolAt

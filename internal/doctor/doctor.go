@@ -90,6 +90,7 @@ func Run(e Env) []Check {
 	e.checkStatusLine(add, settings)
 	e.checkSessionsSeen(add)
 	e.checkContextField(add)
+	e.checkHandoffs(add)
 	e.checkTmux(add)
 	e.checkConfig(add)
 	e.checkIdentity(add)

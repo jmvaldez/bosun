@@ -117,6 +117,15 @@ func (u *uiActions) Interrupt(v eval.View) (string, error) {
 	return ui.Interrupt(ui.InterruptDeps{Tmux: u.tc, Procs: u.a.ad.Procs, Keys: u.cfg.UI.InterruptKeys}, v)
 }
 
+// Handoff starts `bosun handoff` for the row's session, detached.
+func (u *uiActions) Handoff(v eval.View, force bool) (string, error) {
+	task, err := u.a.startHandoff(v.ID, force)
+	if err != nil {
+		return "", err
+	}
+	return "handoff started: " + task, nil
+}
+
 func (u *uiActions) Dismiss(session, agent string) (int, error) {
 	got, err := eval.DismissSession(u.a.ad.Paths, session, agent)
 	if err != nil {

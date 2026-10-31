@@ -617,3 +617,47 @@ func TestContextFieldCheck(t *testing.T) {
 		t.Errorf("a version before the field existed should not warn: %+v", c)
 	}
 }
+
+func TestHandoffsCheck(t *testing.T) {
+	logs := func(r *rig, outcomes ...string) {
+		var b strings.Builder
+		for _, o := range outcomes {
+			if o == "ok" {
+				b.WriteString(`{"ts":"2026-10-31T12:00:00Z","session":"s","outcome":"ok","phase_reached":"launching"}` + "\n")
+			} else {
+				b.WriteString(`{"ts":"2026-10-31T12:00:00Z","session":"s","outcome":"failed","why":"` + o + `","phase_reached":"writing"}` + "\n")
+			}
+		}
+		os.MkdirAll(r.env.Paths.State, 0o755)
+		os.WriteFile(r.env.Paths.HandoffLog(), []byte(b.String()), 0o644)
+	}
+	r := newRig(t)
+	if _, ok := r.checks()["handoff"]; ok {
+		t.Error("a check appeared with no log")
+	}
+
+	r = newRig(t)
+	logs(r, "ok", "ok", "ok", "deadline", "ok", "ok", "not-submitted", "ok", "ok", "deadline")
+	if c := r.checks()["handoff"]; c.Status != OK || c.Detail != "7 ok, 2 deadline, 1 not-submitted (last 10)" {
+		t.Errorf("mixed: %+v", c)
+	}
+
+	r = newRig(t)
+	logs(r, "ok", "ok", "ok", "ok", "ok", "ok", "deadline", "ok", "deadline", "deadline")
+	if c := r.checks()["handoff"]; c.Status != Warn || !strings.Contains(c.Detail, "3 of the last 5 failed with deadline") {
+		t.Errorf("repeat failure: %+v", c)
+	}
+
+	r = newRig(t)
+	logs(r, "ok", "ok", "ok", "ok", "ok", "deadline", "not-submitted", "deadline", "pane-gone", "ok")
+	if c := r.checks()["handoff"]; c.Status != OK {
+		t.Errorf("three failures with different reasons should not warn: %+v", c)
+	}
+
+	// Only the last 10 lines count.
+	r = newRig(t)
+	logs(r, "deadline", "deadline", "deadline", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok")
+	if c := r.checks()["handoff"]; c.Detail != "10 ok (last 10)" {
+		t.Errorf("window: %+v", c)
+	}
+}

@@ -41,6 +41,7 @@ func TestCatchUpTable(t *testing.T) {
 		"doctor":          false, // read-only: a catch-up would write live.json
 		"uninstall":       false, // prints steps; reads no session state
 		"run":             false, // opens a window; reads no session state
+		"handoff":         true,  // acts on a session's state
 		"notify":          false, // posts a test notice; reads no session state
 		"notify-dispatch": false, // detached child
 		"notify-click":    false, // detached child

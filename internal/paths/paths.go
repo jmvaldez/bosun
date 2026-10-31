@@ -79,6 +79,12 @@ func (p Paths) StatuslineLock(id string) string {
 	return join(p.State, "sessions", id, "statusline.lock")
 }
 
+// Handoff is one session's handoff state file.
+func (p Paths) Handoff(id string) string { return join(p.State, "sessions", id, "handoff.json") }
+
+// HandoffLog is the append-only log of finished handoffs.
+func (p Paths) HandoffLog() string { return join(p.State, "handoff.jsonl") }
+
 // Locks is the dir holding every lock file.
 func (p Paths) Locks() string { return join(p.State, "locks") }
 
@@ -184,7 +190,7 @@ var owned = map[string]bool{
 	"sessions": true, "locks": true, "identity.json": true, "heartbeat.json": true, "jump.json": true,
 	"live.json": true, "bosun.db": true, "bosun.db-wal": true, "bosun.db-shm": true, "bosun.db-journal": true,
 	"today.json": true, "alerts.json": true, "alerts.jsonl": true, "notify.json": true, "pace.json": true,
-	"ingest.json": true, "marks.json": true,
+	"ingest.json": true, "marks.json": true, "handoff.jsonl": true,
 	// cache, data, config
 	"agents.json": true, "tmux.conf": true, "exports": true, "config.toml": true,
 }

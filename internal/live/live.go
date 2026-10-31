@@ -31,6 +31,9 @@ const (
 	// Handoff is a display state too: a done or idle session whose context fill
 	// reached handoff.suggest_at. It is advisory, never a runaway (D-34).
 	Handoff = "handoff"
+	// HandedOff is a display state too: a done or idle session whose handoff
+	// finished (D-36). It leaves the jump queue and ranks just above idle.
+	HandedOff = "handed-off"
 )
 
 // Locator is hook.TmuxLoc as stored in live.json.
@@ -136,12 +139,26 @@ type Session struct {
 	// CtxPct is the context fill from the status line snapshot, refreshed each
 	// evaluation; nil is unknown, never 0.
 	CtxPct *float64 `json:"ctx_pct,omitempty"`
+	// HandedOffFrom is the session this one continues, from SessionStart.
+	HandedOffFrom string `json:"handed_off_from,omitempty"`
+	// HandedOffTo is the session that continues this one, found by reverse
+	// lookup each evaluation; HandedOff is true once handoff.json says done.
+	HandedOffTo string `json:"handed_off_to,omitempty"`
+	HandedOff   bool   `json:"handed_off,omitempty"`
+	// HandoffPhase is the phase of a handoff under way (writing or launching),
+	// read from handoff.json each evaluation.
+	HandoffPhase string `json:"handoff_phase,omitempty"`
 }
 
 // Display is the state shown on every surface: needs-you hides any alert;
 // otherwise a runaway alert shows as runaway, a handoff suggestion on a done or
-// idle session as handoff, and a quiet alert on a working session as quiet.
+// idle session as handoff, and a quiet alert on a working session as quiet. A
+// done or idle session that has been handed off shows as handed-off, whatever
+// else it carries.
 func (s *Session) Display() string {
+	if s.HandedOff && (s.State == Done || s.State == Idle) {
+		return HandedOff
+	}
 	if s.State != NeedsYou {
 		if s.Runaway {
 			return Runaway
@@ -267,8 +284,10 @@ func Rank(state string) int {
 		return 4
 	case Quiet:
 		return 5
+	case HandedOff:
+		return 6
 	}
-	return 6
+	return 7
 }
 
 // Queue returns jump's waiting queue (SPEC section 7, Jump): needs-you oldest
@@ -276,11 +295,12 @@ func Rank(state string) int {
 // targets, nor is a done session carrying a runaway alert (Display shows it as
 // runaway). A done session with a handoff suggested stays queued on purpose:
 // the suggestion is advisory and the work still waits for review. A needs-you
-// session is always a target: Display lets needs-you hide any alert.
+// session is always a target: Display lets needs-you hide any alert. A
+// handed-off session is not a target; its work continues elsewhere (D-36).
 func Queue(sessions map[string]*Session) []*Session {
 	var q []*Session
 	for _, s := range sessions {
-		if s.Visible() && (s.State == NeedsYou || (s.State == Done && !s.Runaway)) {
+		if s.Visible() && (s.State == NeedsYou || (s.State == Done && !s.Runaway && !s.HandedOff)) {
 			q = append(q, s)
 		}
 	}

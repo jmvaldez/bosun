@@ -166,6 +166,9 @@ func (s *Session) start(ev hook.Event, ts time.Time) {
 		s.Task, s.TaskSrc, s.Account = x.Task, x.TaskSrc, x.Account
 		s.BaseTask, s.BaseSrc = x.Task, x.TaskSrc
 		s.Entrypoint, s.Transcript = x.Entrypoint, x.Transcript
+		if x.HandoffFrom != "" {
+			s.HandedOffFrom = x.HandoffFrom
+		}
 	}
 	if ev.Src == "compact" {
 		return // compaction happens mid-session; keep the running state

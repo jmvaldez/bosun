@@ -1,8 +1,10 @@
 package doctor
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"regexp"
@@ -223,6 +225,107 @@ func (e Env) checkContextField(add addFn) {
 		return
 	}
 	add("context-field", OK, "no status line data from a version that sends context fill yet")
+}
+
+const (
+	// handoffSampled is how many log lines the outcome counts cover.
+	handoffSampled = 10
+	// handoffWarnWindow and handoffWarnAt: this many of the last window's
+	// handoffs failing for the same reason is a warning.
+	handoffWarnWindow = 5
+	handoffWarnAt     = 3
+)
+
+// checkHandoffs is the outcome check for `bosun handoff`: counts over the last
+// 10 lines of handoff.jsonl, and a warning when the same failure keeps coming
+// back (the prompt stopped working, or the pane stopped answering). With no log
+// yet it adds nothing.
+func (e Env) checkHandoffs(add addFn) {
+	lines := tailLines(e.Paths.HandoffLog(), handoffSampled)
+	if len(lines) == 0 {
+		return
+	}
+	var outcomes []string // "ok" or the failure's why, oldest first
+	for _, l := range lines {
+		var rec struct{ Outcome, Why string }
+		if json.Unmarshal([]byte(l), &rec) != nil {
+			continue
+		}
+		if rec.Outcome == "ok" {
+			outcomes = append(outcomes, "ok")
+		} else if rec.Why != "" {
+			outcomes = append(outcomes, rec.Why)
+		}
+	}
+	if len(outcomes) == 0 {
+		return
+	}
+	counts := map[string]int{}
+	for _, o := range outcomes {
+		counts[o]++
+	}
+	var failed []string
+	for o := range counts {
+		if o != "ok" {
+			failed = append(failed, o)
+		}
+	}
+	sort.Slice(failed, func(i, j int) bool {
+		if counts[failed[i]] != counts[failed[j]] {
+			return counts[failed[i]] > counts[failed[j]]
+		}
+		return failed[i] < failed[j]
+	})
+	parts := []string{fmt.Sprintf("%d ok", counts["ok"])}
+	for _, o := range failed {
+		parts = append(parts, fmt.Sprintf("%d %s", counts[o], o))
+	}
+	detail := strings.Join(parts, ", ") + fmt.Sprintf(" (last %d)", len(outcomes))
+	recent := outcomes[max(len(outcomes)-handoffWarnWindow, 0):]
+	same := map[string]int{}
+	for _, o := range recent {
+		if o != "ok" {
+			same[o]++
+		}
+	}
+	for _, o := range failed {
+		if same[o] >= handoffWarnAt {
+			add("handoff", Warn, "%s: %d of the last %d failed with %s", detail, same[o], len(recent), o)
+			return
+		}
+	}
+	add("handoff", OK, "%s", detail)
+}
+
+// tailLines returns the last n non-empty lines of a file read from its final
+// 16 KiB; a missing file has none.
+func tailLines(path string, n int) []string {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	const window = 16 << 10
+	fi, err := f.Stat()
+	if err != nil {
+		return nil
+	}
+	off := max(fi.Size()-window, 0)
+	buf := make([]byte, fi.Size()-off)
+	if _, err := f.ReadAt(buf, off); err != nil && !errors.Is(err, io.EOF) {
+		return nil
+	}
+	ls := strings.Split(string(buf), "\n")
+	if off > 0 && len(ls) > 0 {
+		ls = ls[1:] // the first line is probably cut
+	}
+	var out []string
+	for _, l := range ls {
+		if strings.TrimSpace(l) != "" {
+			out = append(out, l)
+		}
+	}
+	return out[max(len(out)-n, 0):]
 }
 
 // versionAtLeast reports whether a dotted major.minor.patch version is at least

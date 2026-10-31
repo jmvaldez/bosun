@@ -32,6 +32,10 @@
 
 **Handoff suggested**: a `done` or `idle` session whose context fill has reached `handoff.suggest_at` (default 70%). Advisory: it shows as `⇄ handoff`, stays in the jump queue, and is never a runaway.
 
+**Handoff**: moving a session's work to a fresh session. `bosun handoff` has the session write a handoff doc, waits for it, opens a new window on the same task that reads the doc, and marks the old pane handed off. The doc is the session's text and is never stored by bosun.
+
+**Handed off**: a `done` or `idle` session whose handoff finished. A display state, grey, ranked just above idle; it leaves the jump queue and its pane stays open.
+
 **Pace**: today's spend so far divided by the typical cumulative spend at the same clock time.
 
 **Baseline day**: a past day with spend greater than zero, inside the pace window, excluding today.

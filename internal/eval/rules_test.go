@@ -595,6 +595,42 @@ func TestHandoffStartedSkipsTheSuggestion(t *testing.T) {
 	}
 }
 
+// The old session shows handed-off once handoff.json says done, points at the
+// session that names it in HandedOffFrom, and leaves the queue; a handoff under
+// way shows its phase.
+func TestHandedOffLinkAndDisplay(t *testing.T) {
+	pct := func(p float64) *float64 { return &p }
+	r := handoffRig(t, live.Done, pct(90), 0.70)
+	r.emit("bbb", "%2", "SessionStart", func(e *hook.Event) { e.Start = &hook.StartExtra{HandoffFrom: "aaa"} })
+	r.writeJSON(r.d.Ad.Paths.Handoff("aaa"), map[string]any{"phase": "launching"})
+	res := Evaluate(r.d)
+	for _, v := range res.Sessions {
+		if v.ID == "aaa" && v.HandoffPhase != "launching" {
+			t.Errorf("phase = %q, want launching", v.HandoffPhase)
+		}
+	}
+	r.writeJSON(r.d.Ad.Paths.Handoff("aaa"), map[string]any{"phase": "done"})
+	res = Evaluate(r.d)
+	f := live.Read(r.d.Ad.Paths.Live())
+	if a := f.Sessions["aaa"]; !a.HandedOff || a.HandedOffTo != "bbb" || a.HandoffPhase != "" {
+		t.Errorf("old session = %+v", a)
+	}
+	if f.Sessions["bbb"].HandedOffFrom != "aaa" {
+		t.Error("the new session lost its link")
+	}
+	for _, v := range res.Sessions {
+		if v.ID == "aaa" && v.Display != live.HandedOff {
+			t.Errorf("display = %q, want handed-off", v.Display)
+		}
+	}
+	if q := live.Queue(f.Sessions); len(q) != 0 {
+		t.Errorf("queue = %v, want it empty", q)
+	}
+	if res.Counts.Handoff != 0 {
+		t.Error("a handed-off session is still suggested")
+	}
+}
+
 func TestHandoffStaysInTheJumpQueue(t *testing.T) {
 	pct := func(p float64) *float64 { return &p }
 	r := handoffRig(t, live.Done, pct(90), 0.70)
