@@ -47,6 +47,26 @@ func (c Client) run(args ...string) ([]byte, error) {
 	return c.Runner.Run(Timeout, bin, append(full, args...)...)
 }
 
+// PasteBuffer is the tmux buffer PasteText loads and then deletes.
+const PasteBuffer = "bosun-handoff"
+
+// runIn is run with stdin; the Runner must be able to feed it.
+func (c Client) runIn(stdin string, args ...string) ([]byte, error) {
+	ir, ok := c.Runner.(runner.InputRunner)
+	if !ok {
+		return nil, fmt.Errorf("tmux runner cannot feed stdin")
+	}
+	bin := c.Bin
+	if bin == "" {
+		bin = "tmux"
+	}
+	var full []string
+	if c.Socket != "" {
+		full = append(full, "-S", c.Socket)
+	}
+	return ir.RunInput(Timeout, stdin, bin, append(full, args...)...)
+}
+
 // Pane is one row of list-panes -a.
 type Pane struct {
 	ServerPID int
@@ -217,10 +237,21 @@ func FocusVerdict(clients []ClientInfo, pane string) platform.Verdict {
 	return verdict
 }
 
-// SendKeys sends key names to a pane (send-keys -t pane KEY...). Only the popup's
-// confirmed interrupt calls it.
+// SendKeys sends key names to a pane (send-keys -t pane KEY...). Only
+// panewrite's guarded writers call it.
 func (c Client) SendKeys(pane string, keys []string) error {
 	_, err := c.run(append([]string{"send-keys", "-t", pane}, keys...)...)
+	return err
+}
+
+// PasteText pastes text into a pane as one bracketed paste, so its newlines do
+// not submit. The text goes through a named buffer on stdin, never a command
+// line, and the buffer is deleted by the paste. The caller sends the submit key.
+func (c Client) PasteText(pane, text string) error {
+	if _, err := c.runIn(text, "load-buffer", "-b", PasteBuffer, "-"); err != nil {
+		return err
+	}
+	_, err := c.run("paste-buffer", "-p", "-d", "-b", PasteBuffer, "-t", pane)
 	return err
 }
 
