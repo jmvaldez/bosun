@@ -10,6 +10,7 @@ import (
 
 	"github.com/jmvaldez/bosun/internal/eval"
 	"github.com/jmvaldez/bosun/internal/ledger"
+	"github.com/jmvaldez/bosun/internal/live"
 	"github.com/jmvaldez/bosun/internal/pace"
 	"github.com/jmvaldez/bosun/internal/peek"
 	"github.com/jmvaldez/bosun/internal/segment"
@@ -239,6 +240,34 @@ func TestGoldenStatusViewContextFill(t *testing.T) {
 	for _, w := range []int{180, 100} {
 		f := frame(ctxModel(), w, 24)
 		golden(t, fmt.Sprintf("status_ctx_%d.golden", w), f)
+		for i, l := range strings.Split(f, "\n") {
+			if Width(l) != w {
+				t.Errorf("width %d line %d is %d columns", w, i, Width(l))
+			}
+		}
+	}
+}
+
+// One idle session past the handoff threshold: its row reads `⇄ handoff` and
+// the header counts it.
+func handoffModel() *Model {
+	d := mockData()
+	d.Sessions = append([]eval.View(nil), d.Sessions...)
+	p := 78.0
+	d.Sessions[5].Display, d.Sessions[5].CtxPct = live.Handoff, &p
+	d.Counts.Handoff, d.Counts.Idle = 1, d.Counts.Idle-1
+	m := New(Options{Peek: true, ShowText: true}, &mockActions{})
+	m.SetData(d)
+	return m
+}
+
+func TestGoldenStatusViewHandoff(t *testing.T) {
+	for _, w := range []int{180, 100} {
+		f := frame(handoffModel(), w, 24)
+		golden(t, fmt.Sprintf("status_handoff_%d.golden", w), f)
+		if !strings.Contains(f, "handoff ·") || !strings.Contains(f, "⇄ 1") {
+			t.Errorf("width %d: no handoff row or header count:\n%s", w, f)
+		}
 		for i, l := range strings.Split(f, "\n") {
 			if Width(l) != w {
 				t.Errorf("width %d line %d is %d columns", w, i, Width(l))

@@ -13,6 +13,7 @@ import (
 	"github.com/jmvaldez/bosun/internal/live"
 	"github.com/jmvaldez/bosun/internal/notify"
 	"github.com/jmvaldez/bosun/internal/pace"
+	"github.com/jmvaldez/bosun/internal/rules"
 	"github.com/jmvaldez/bosun/internal/spend"
 )
 
@@ -445,5 +446,180 @@ func TestContextFillReachesTheView(t *testing.T) {
 	r.writeJSON(r.d.Ad.Paths.Session("aaa")+"/statusline.json", map[string]any{"session_id": "aaa", "cost_usd": 1.0})
 	if res = Evaluate(r.d); res.Sessions[0].CtxPct != nil {
 		t.Error("a snapshot without the field must read as unknown, not the last value")
+	}
+}
+
+// handoffRig runs one session in the named state with the given fill. Ctx is
+// the status line's percentage, so 78 means 78% of the window.
+func handoffRig(t *testing.T, state string, ctx *float64, suggestAt float64) *rig {
+	r := newRig(t).withRules()
+	r.d.Cfg.Handoff.SuggestAt = suggestAt
+	r.d.Cfg.Rules.SessionCost = 0 // keep cost alerts out of the way
+	r.emit("aaa", "%1", "SessionStart")
+	switch state {
+	case live.Done:
+		r.emit("aaa", "%1", "UserPromptSubmit")
+		r.emit("aaa", "%1", "Stop")
+	case live.Working:
+		r.emit("aaa", "%1", "UserPromptSubmit")
+	case live.NeedsYou:
+		r.emit("aaa", "%1", "UserPromptSubmit")
+		r.emit("aaa", "%1", "PermissionRequest")
+	}
+	r.setCtx(ctx)
+	return r
+}
+
+func (r *rig) setCtx(ctx *float64) {
+	snap := map[string]any{"session_id": "aaa", "cost_usd": 1.0}
+	if ctx != nil {
+		snap["ctx_pct"] = *ctx
+	}
+	r.writeJSON(r.d.Ad.Paths.Session("aaa")+"/statusline.json", snap)
+}
+
+func handoffs(r *rig) (n int) {
+	for _, d := range r.dispatches() {
+		if d.Kind == notify.Handoff {
+			n++
+		}
+	}
+	return n
+}
+
+func TestHandoffSuggestionTable(t *testing.T) {
+	pct := func(p float64) *float64 { return &p }
+	tests := []struct {
+		name      string
+		state     string
+		ctx       *float64
+		suggestAt float64
+		want      bool
+	}{
+		{"done above", live.Done, pct(78), 0.70, true},
+		{"done exactly at", live.Done, pct(70), 0.70, true},
+		{"done just below", live.Done, pct(69.9), 0.70, false},
+		{"idle above", live.Idle, pct(95), 0.70, true},
+		{"idle below", live.Idle, pct(10), 0.70, false},
+		{"done at a lower threshold", live.Done, pct(30), 0.25, true},
+		{"working above", live.Working, pct(90), 0.70, false},
+		{"needs-you above", live.NeedsYou, pct(90), 0.70, false},
+		{"done, fill unknown", live.Done, nil, 0.70, false},
+		{"idle, fill unknown", live.Idle, nil, 0.01, false},
+		{"done above, suggest_at 0", live.Done, pct(99), 0, false},
+		{"idle above, suggest_at 0", live.Idle, pct(99), 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := handoffRig(t, tt.state, tt.ctx, tt.suggestAt)
+			res := Evaluate(r.d)
+			got := false
+			for _, a := range res.Alerts {
+				if a.Rule == rules.Handoff {
+					got = true
+					if a.Detail == "" || !strings.HasPrefix(a.Detail, "ctx ") {
+						t.Errorf("detail = %q, want ctx and a number", a.Detail)
+					}
+				}
+			}
+			if got != tt.want {
+				t.Errorf("alert active = %v, want %v", got, tt.want)
+			}
+			if n := handoffs(r); (n == 1) != tt.want || n > 1 {
+				t.Errorf("handoff dispatches = %d, want fire = %v", n, tt.want)
+			}
+			for _, s := range res.Sessions {
+				if s.Display == live.Runaway {
+					t.Error("a handoff suggestion must never display as runaway")
+				}
+				if tt.want && s.Display != live.Handoff {
+					t.Errorf("display = %q, want handoff", s.Display)
+				}
+			}
+			if tt.want && (res.Counts.Handoff != 1 || res.Counts.Runaway != 0) {
+				t.Errorf("counts = %+v", res.Counts)
+			}
+		})
+	}
+}
+
+func TestHandoffFiresOnceThenClears(t *testing.T) {
+	pct := func(p float64) *float64 { return &p }
+	r := handoffRig(t, live.Done, pct(78), 0.70)
+	Evaluate(r.d)
+	Evaluate(r.d)
+	Evaluate(r.d)
+	if n := handoffs(r); n != 1 {
+		t.Fatalf("dispatches over three ticks = %d, want 1 (Reconcile dedupes)", n)
+	}
+	// /compact drops the fill: the alert clears, its notice is retracted, and
+	// the display falls back to done.
+	r.sp.calls = nil
+	r.setCtx(pct(12))
+	res := Evaluate(r.d)
+	if res.Counts.Handoff != 0 || res.Counts.Done != 1 {
+		t.Errorf("after compact: %+v", res.Counts)
+	}
+	retracted := false
+	for _, c := range r.sp.calls {
+		if len(c) > 1 && c[1] == "notify-dispatch" && strings.Contains(strings.Join(c, " "), "--retract") &&
+			strings.Contains(strings.Join(c, " "), "handoff") {
+			retracted = true
+		}
+	}
+	if !retracted {
+		t.Errorf("the handoff notice was not retracted: %v", r.sp.calls)
+	}
+	// Fill rises again: re-armed, fires again.
+	r.setCtx(pct(80))
+	Evaluate(r.d)
+	if n := handoffs(r); n != 1 { // r.sp.calls was reset above
+		t.Errorf("dispatches after re-arm = %d, want 1", n)
+	}
+	// The next turn starts: working clears it.
+	r.emit("aaa", "%1", "UserPromptSubmit")
+	res = Evaluate(r.d)
+	if res.Counts.Handoff != 0 || res.Counts.Working != 1 {
+		t.Errorf("working must clear the suggestion: %+v", res.Counts)
+	}
+}
+
+func TestHandoffStartedSkipsTheSuggestion(t *testing.T) {
+	pct := func(p float64) *float64 { return &p }
+	for phase, want := range map[string]bool{"writing": false, "launching": false, "done": false, "failed": true} {
+		r := handoffRig(t, live.Done, pct(90), 0.70)
+		r.writeJSON(r.d.Ad.Paths.Session("aaa")+"/handoff.json", map[string]any{"phase": phase})
+		if Evaluate(r.d).Counts.Handoff == 1 != want {
+			t.Errorf("phase %s: suggested = %v, want %v", phase, !want, want)
+		}
+	}
+}
+
+func TestHandoffStaysInTheJumpQueue(t *testing.T) {
+	pct := func(p float64) *float64 { return &p }
+	r := handoffRig(t, live.Done, pct(90), 0.70)
+	Evaluate(r.d)
+	if q := live.Queue(live.Read(r.d.Ad.Paths.Live()).Sessions); len(q) != 1 {
+		t.Errorf("queue = %v, want the done session with a handoff suggested", q)
+	}
+}
+
+// markRunaway must never set Runaway for a store that holds only a handoff
+// alert.
+func TestMarkRunawayIgnoresHandoffAlerts(t *testing.T) {
+	f := &live.File{Sessions: map[string]*live.Session{"s1": {ID: "s1", State: live.Done, Runaway: true}}}
+	store := rules.Store{}
+	store.Reconcile([]rules.Cond{{Rule: rules.Handoff, Scope: "s1", Session: "s1", Detail: "ctx 78%"}}, time.Unix(0, 0), "d", false)
+	markRunaway(f, store)
+	s := f.Sessions["s1"]
+	if s.Runaway || !s.HandoffSuggested || s.QuietAlert {
+		t.Errorf("flags = runaway %v handoff %v quiet %v", s.Runaway, s.HandoffSuggested, s.QuietAlert)
+	}
+	if got := s.Display(); got != live.Handoff {
+		t.Errorf("display = %q", got)
+	}
+	markRunaway(f, rules.Store{})
+	if s.HandoffSuggested {
+		t.Error("the flag must clear with the alert")
 	}
 }

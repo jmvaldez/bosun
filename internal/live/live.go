@@ -28,6 +28,9 @@ const (
 	// Quiet is a display state too: a working session with no events for the
 	// quiet rule's window, shown purple instead of counted as a runaway.
 	Quiet = "quiet"
+	// Handoff is a display state too: a done or idle session whose context fill
+	// reached handoff.suggest_at. It is advisory, never a runaway (D-34).
+	Handoff = "handoff"
 )
 
 // Locator is hook.TmuxLoc as stored in live.json.
@@ -124,21 +127,27 @@ type Session struct {
 	// later SessionStarts (compact, resume), which overwrite Source.
 	Forked bool `json:"forked,omitempty"`
 	// Runaway is recomputed each evaluation from alerts.json: any undismissed
-	// session or subagent alert except quiet. QuietAlert is the quiet rule on its own, shown as its own state.
+	// session or subagent alert except quiet and handoff. QuietAlert is the quiet
+	// rule on its own, shown as its own state.
 	Runaway    bool `json:"runaway,omitempty"`
 	QuietAlert bool `json:"quiet_alert,omitempty"`
+	// HandoffSuggested is the handoff rule on its own, recomputed with Runaway.
+	HandoffSuggested bool `json:"handoff_suggested,omitempty"`
 	// CtxPct is the context fill from the status line snapshot, refreshed each
 	// evaluation; nil is unknown, never 0.
 	CtxPct *float64 `json:"ctx_pct,omitempty"`
 }
 
 // Display is the state shown on every surface: needs-you hides any alert;
-// otherwise a runaway alert shows as runaway, and a quiet alert on a working
-// session as quiet.
+// otherwise a runaway alert shows as runaway, a handoff suggestion on a done or
+// idle session as handoff, and a quiet alert on a working session as quiet.
 func (s *Session) Display() string {
 	if s.State != NeedsYou {
 		if s.Runaway {
 			return Runaway
+		}
+		if s.HandoffSuggested && (s.State == Done || s.State == Idle) {
+			return Handoff
 		}
 		if s.QuietAlert && s.State == Working {
 			return Quiet
@@ -250,21 +259,24 @@ func Rank(state string) int {
 		return 0
 	case Runaway:
 		return 1
-	case Done:
+	case Handoff:
 		return 2
-	case Working:
+	case Done:
 		return 3
-	case Quiet:
+	case Working:
 		return 4
+	case Quiet:
+		return 5
 	}
-	return 5
+	return 6
 }
 
 // Queue returns jump's waiting queue (SPEC section 7, Jump): needs-you oldest
 // first (by time in state), then done oldest first. Working and idle are never
 // targets, nor is a done session carrying a runaway alert (Display shows it as
-// runaway). A needs-you session is always a target: Display lets needs-you
-// hide any alert.
+// runaway). A done session with a handoff suggested stays queued on purpose:
+// the suggestion is advisory and the work still waits for review. A needs-you
+// session is always a target: Display lets needs-you hide any alert.
 func Queue(sessions map[string]*Session) []*Session {
 	var q []*Session
 	for _, s := range sessions {

@@ -31,6 +31,7 @@ type Config struct {
 	Bar     Bar
 	Privacy Privacy
 	Run     Run
+	Handoff Handoff
 }
 
 type Rules struct {
@@ -88,6 +89,18 @@ type UI struct {
 
 type Run struct{ WorktreeDir string }
 
+// Handoff configures the context handoff. SuggestAt is the context fill, as a
+// share of the window, at which a done or idle session is offered a handoff;
+// 0 turns the suggestion off. Prompt overrides the embedded template inline,
+// Dir is where the doc goes outside a git repo, and Deadline bounds the wait
+// for the doc. Auto is reserved for the evaluator starting the handoff itself.
+type Handoff struct {
+	SuggestAt   float64
+	Prompt, Dir string
+	Deadline    time.Duration
+	Auto        bool
+}
+
 // DefaultKeyRegex is the issue key pattern when task.key_regex is unset.
 const DefaultKeyRegex = `[A-Z][A-Z0-9]+-\d+`
 
@@ -117,6 +130,7 @@ func Default() Config {
 		UI:      UI{DiffCmd: "git diff", Peek: true, InterruptKeys: "Escape", Glyphs: "unicode"},
 		Bar:     Bar{Style: "labeled"},
 		Privacy: Privacy{ShowText: true},
+		Handoff: Handoff{SuggestAt: 0.70, Deadline: 5 * time.Minute},
 	}
 }
 
@@ -226,6 +240,11 @@ func (c *Config) entries() []*entry {
 		str("bar.style", &c.Bar.Style, "labeled", "compact"),
 		boolean("privacy.show_text", &c.Privacy.ShowText),
 		str("run.worktree_dir", &c.Run.WorktreeDir),
+		share("handoff.suggest_at", &c.Handoff.SuggestAt),
+		str("handoff.prompt", &c.Handoff.Prompt),
+		str("handoff.dir", &c.Handoff.Dir),
+		dur("handoff.deadline", &c.Handoff.Deadline),
+		boolean("handoff.auto", &c.Handoff.Auto),
 	}
 }
 
@@ -318,6 +337,20 @@ func ratio(key string, dst *float64) *entry {
 	e.set = func(v any) error {
 		if n, ok := num(v); ok && n <= 0 {
 			return fmt.Errorf("want a number > 0")
+		}
+		return set(v)
+	}
+	e.format = func() string { return strconv.FormatFloat(*dst, 'f', -1, 64) }
+	return e
+}
+
+// share is a fraction of a whole between 0 and 1; 0 turns the rule off.
+func share(key string, dst *float64) *entry {
+	e := money(key, dst)
+	set := e.set
+	e.set = func(v any) error {
+		if n, ok := num(v); ok && n > 1 {
+			return fmt.Errorf("want a number between 0 and 1")
 		}
 		return set(v)
 	}

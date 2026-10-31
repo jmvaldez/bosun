@@ -22,6 +22,7 @@ const (
 	SessionCost     = "session_cost"
 	DailyPace       = "daily_pace"
 	DailyBudget     = "daily_budget"
+	Handoff         = "handoff"
 )
 
 // Alert is one entry of alerts.json, keyed "<rule>|<scope>".

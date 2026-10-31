@@ -1,7 +1,10 @@
 package eval
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -79,7 +82,7 @@ func (d Deps) evalRules(f *live.File, now time.Time) ruleResult {
 }
 
 // sessionConds adds the conditions that hold for one live session: subagent
-// runtime and cost, quiet, and session cost. It reads the session's status line
+// runtime and cost, quiet, handoff, and session cost. It reads the session's status line
 // snapshot once and also records the context fill from it.
 func (d Deps) sessionConds(s *live.Session, now time.Time, add func(rules.Cond, ruleInfo)) {
 	cfg := d.Cfg
@@ -114,6 +117,11 @@ func (d Deps) sessionConds(s *live.Session, now time.Time, add func(rules.Cond, 
 				ruleInfo{session: s, dur: gap})
 		}
 	}
+	if at := cfg.Handoff.SuggestAt; at > 0 && s.CtxPct != nil && *s.CtxPct/100 >= at &&
+		(s.State == live.Done || s.State == live.Idle) && !handoffStarted(d.Ad.Paths.Session(s.ID)) {
+		add(rules.Cond{Rule: rules.Handoff, Scope: s.ID, Session: s.ID, Detail: fmt.Sprintf("ctx %.0f%%", *s.CtxPct)},
+			ruleInfo{session: s, ctx: *s.CtxPct})
+	}
 	if step := cfg.Rules.SessionCost; step > 0 {
 		if snapOK {
 			own := ledger.SnapshotOwnUSD(snap, s.Forked)
@@ -126,16 +134,35 @@ func (d Deps) sessionConds(s *live.Session, now time.Time, add func(rules.Cond, 
 	}
 }
 
-// markRunaway sets each session's Runaway and QuietAlert flags from the
-// active alerts.
+// handoffStarted reports whether a handoff is under way or finished for the
+// session, from the phase in its handoff.json. A missing or unreadable file
+// means none, so the suggestion stands.
+func handoffStarted(sessionDir string) bool {
+	b, err := os.ReadFile(filepath.Join(sessionDir, "handoff.json"))
+	if err != nil {
+		return false
+	}
+	var st struct{ Phase string }
+	if json.Unmarshal(b, &st) != nil {
+		return false
+	}
+	return st.Phase == "writing" || st.Phase == "launching" || st.Phase == "done"
+}
+
+// markRunaway sets each session's Runaway, QuietAlert and HandoffSuggested
+// flags from the active alerts. Quiet and handoff are advisory, so neither
+// counts as a runaway.
 func markRunaway(f *live.File, store rules.Store) {
 	run := store.BySession()
 	for id, s := range f.Sessions {
-		s.Runaway, s.QuietAlert = false, false
+		s.Runaway, s.QuietAlert, s.HandoffSuggested = false, false, false
 		for _, a := range run[id] {
-			if a.Rule == rules.Quiet {
+			switch a.Rule {
+			case rules.Quiet:
 				s.QuietAlert = true
-			} else {
+			case rules.Handoff:
+				s.HandoffSuggested = true
+			default:
 				s.Runaway = true
 			}
 		}
@@ -161,6 +188,7 @@ type ruleInfo struct {
 	step    float64
 	ratio   float64
 	cap     float64
+	ctx     float64
 }
 
 // dispatchAlert starts notify-dispatch with every value its template needs
@@ -173,7 +201,7 @@ func (d Deps) dispatchAlert(a rules.Alert, in ruleInfo, now time.Time) {
 	if in.session != nil {
 		r.Session, r.Repo, r.Task = in.session.ID, in.session.Repo, in.session.Task
 	}
-	dur, usd, step, ratio, capUSD := in.dur, in.usd, in.step, in.ratio, in.cap
+	dur, usd, step, ratio, capUSD, ctx := in.dur, in.usd, in.step, in.ratio, in.cap, in.ctx
 	switch notify.Kind(a.Rule) {
 	case notify.SubagentRuntime:
 		lim := d.Cfg.Rules.SubagentRuntime
@@ -189,6 +217,8 @@ func (d Deps) dispatchAlert(a rules.Alert, in ruleInfo, now time.Time) {
 		r.USD, r.Ratio = &usd, &ratio
 	case notify.DailyBudget:
 		r.USD, r.CapUSD = &usd, &capUSD
+	case notify.Handoff:
+		r.CtxPct = &ctx
 	}
 	_ = d.Ad.Spawner.Spawn(d.Exe, append([]string{"notify-dispatch"}, r.Args()...)...)
 }

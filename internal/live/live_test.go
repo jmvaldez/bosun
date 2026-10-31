@@ -215,6 +215,61 @@ func TestQueueKeepsNeedsYouWithRunaway(t *testing.T) {
 	}
 }
 
+// Display precedence: needs-you > runaway > handoff > done > working > quiet >
+// idle. Handoff shows only on a done or idle session, and quiet only on a
+// working one.
+func TestDisplayPrecedenceTable(t *testing.T) {
+	states := []string{NeedsYou, Done, Idle, Working}
+	for _, state := range states {
+		// Needs-you is a state, so the flags run over the other three.
+		for mask := 0; mask < 8; mask++ {
+			run, ho, qa := mask&1 != 0, mask&2 != 0, mask&4 != 0
+			s := &Session{State: state, Runaway: run, HandoffSuggested: ho, QuietAlert: qa}
+			want := state
+			switch {
+			case state == NeedsYou:
+			case run:
+				want = Runaway
+			case ho && (state == Done || state == Idle):
+				want = Handoff
+			case qa && state == Working:
+				want = Quiet
+			}
+			if got := s.Display(); got != want {
+				t.Errorf("state=%s runaway=%v handoff=%v quiet=%v: Display = %q, want %q", state, run, ho, qa, got, want)
+			}
+		}
+	}
+	both := &Session{State: Done, Runaway: true, HandoffSuggested: true}
+	if both.Display() != Runaway {
+		t.Error("a runaway session with a handoff suggested must show runaway")
+	}
+	ny := &Session{State: NeedsYou, Runaway: true, HandoffSuggested: true, QuietAlert: true}
+	if ny.Display() != NeedsYou {
+		t.Error("needs-you must hide both")
+	}
+}
+
+func TestRankOrdersHandoffBetweenRunawayAndDone(t *testing.T) {
+	order := []string{NeedsYou, Runaway, Handoff, Done, Working, Quiet, Idle}
+	for i := 1; i < len(order); i++ {
+		if Rank(order[i-1]) >= Rank(order[i]) {
+			t.Errorf("Rank(%s) = %d is not below Rank(%s) = %d", order[i-1], Rank(order[i-1]), order[i], Rank(order[i]))
+		}
+	}
+}
+
+// A done session with a handoff suggested is still waiting for review, so it
+// stays in the queue; a done runaway session does not.
+func TestQueueKeepsDoneWithHandoffButNotRunaway(t *testing.T) {
+	ho := &Session{ID: "h", State: Done, HandoffSuggested: true, Loc: Locator{Pane: "%h"}}
+	run := &Session{ID: "r", State: Done, Runaway: true, Loc: Locator{Pane: "%r"}}
+	q := Queue(map[string]*Session{"h": ho, "r": run})
+	if len(q) != 1 || q[0].ID != "h" {
+		t.Errorf("queue = %v, want only the handoff session", q)
+	}
+}
+
 func writeEvents(t *testing.T, path string, evs ...hook.Event) {
 	t.Helper()
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)

@@ -185,7 +185,7 @@ func (d Deps) recheck(r *Request) string {
 	switch r.Kind {
 	case NeedsYou, Done, Failed:
 		return d.recheckAttention(r)
-	case DailyPace, DailyBudget, SubagentRuntime, SubagentCost, SessionCost, Quiet:
+	case DailyPace, DailyBudget, SubagentRuntime, SubagentCost, SessionCost, Quiet, Handoff:
 		// Look the alert up by id: its key includes the subagent for subagent rules.
 		for _, a := range rules.Load(d.Paths.Alerts()) {
 			if a.ID == r.AlertID && !a.Dismissed {

@@ -50,16 +50,16 @@ func (m *Model) band(code, line string) string {
 	return code + strings.ReplaceAll(line, reset, reset+code) + reset
 }
 
-// glyphs are the state marks: flag, tri and check come from segment.Glyphs;
-// ASCII also swaps ✱ ▸ for * >.
-type glyphs struct{ flag, tri, check, quiet, idle string }
+// glyphs are the state marks: flag, tri, check and swap come from
+// segment.Glyphs; ASCII also swaps ✱ ▸ for * >.
+type glyphs struct{ flag, tri, check, swap, quiet, idle string }
 
 func (m *Model) g() glyphs {
-	flag, tri, check := segment.Glyphs(m.opts.ASCII)
+	flag, tri, check, swap := segment.Glyphs(m.opts.ASCII)
 	if m.opts.ASCII {
-		return glyphs{flag, tri, check, "*", ">"}
+		return glyphs{flag, tri, check, swap, "*", ">"}
 	}
-	return glyphs{flag, tri, check, "✱", "▸"}
+	return glyphs{flag, tri, check, swap, "✱", "▸"}
 }
 
 // NarrowBelow is the width under which the Spend summary pane collapses to two
@@ -117,6 +117,9 @@ func (m *Model) headerLine(inner int) string {
 		}
 		if c.Runaway > 0 {
 			parts = append(parts, m.sty(cRed, fmt.Sprintf("%s %d", gl.tri, c.Runaway)))
+		}
+		if c.Handoff > 0 {
+			parts = append(parts, m.sty(cCyan, fmt.Sprintf("%s %d", gl.swap, c.Handoff)))
 		}
 		if c.Done > 0 {
 			parts = append(parts, m.sty(cGreen, fmt.Sprintf("%s %d", gl.check, c.Done)))
@@ -320,6 +323,8 @@ func (m *Model) iconFor(v eval.View) (string, string) {
 		return gl.flag, cAmber
 	case live.Runaway:
 		return gl.tri, cRed
+	case live.Handoff:
+		return gl.swap, cCyan
 	case live.Done:
 		return gl.check, cGreen
 	case live.Working:
@@ -481,6 +486,12 @@ func (m *Model) stateText(v eval.View) (string, string) {
 			return "runaway · " + v.Alerts[0], cRed
 		}
 		return "runaway", cRed
+	case v.Display == live.Handoff:
+		// Phase 4 adds the h key; until then the line names no key.
+		if v.CtxPct != nil {
+			return fmt.Sprintf("handoff · context %.0f%% · consider a handoff", *v.CtxPct), cCyan
+		}
+		return "handoff · consider a handoff", cCyan
 	case v.Display == live.Done:
 		if v.Edits > 0 {
 			return fmt.Sprintf("done · ready to review (%d files)", v.Edits), cGreen

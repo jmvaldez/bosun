@@ -77,10 +77,23 @@ func TestSpendPart(t *testing.T) {
 
 // Text must account for every session: the buckets add up to the total.
 func TestTextCountsAddUp(t *testing.T) {
-	c := Counts{Sessions: 8, NeedsYou: 1, Runaway: 1, Done: 2, Working: 2, Quiet: 1, Idle: 1}
-	want := "8 sessions: 1 needs-you, 1 runaway, 2 done, 2 working, 1 quiet, 1 idle"
+	c := Counts{Sessions: 8, NeedsYou: 1, Runaway: 1, Handoff: 1, Done: 1, Working: 2, Quiet: 1, Idle: 1}
+	want := "8 sessions: 1 needs-you, 1 runaway, 1 handoff, 1 done, 2 working, 1 quiet, 1 idle"
 	if got := Text(c); got != want {
 		t.Errorf("Text = %q, want %q", got, want)
+	}
+}
+
+func TestHandoffBlock(t *testing.T) {
+	c := Counts{Sessions: 2, Handoff: 1, Done: 1}
+	if p := stripStyles(Bar(c, Spend{}, Opts{})); p != " ⇄ 1 handoff  ✓ 1 done  2 sessions · 2 agents " {
+		t.Errorf("labeled = %q", p)
+	}
+	if p := stripStyles(Bar(c, Spend{}, Opts{ASCII: true})); !strings.Contains(p, "<> 1 handoff") || strings.Contains(p, "⇄") {
+		t.Errorf("ascii = %q", p)
+	}
+	if got := Tmux(c, Spend{}); !strings.Contains(got, "⇄1 ") {
+		t.Errorf("compact = %q", got)
 	}
 }
 

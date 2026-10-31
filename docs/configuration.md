@@ -30,6 +30,11 @@ the default and `bosun doctor` reports them.
 | `bar.style` | `"labeled"` | `compact` for the terse bar |
 | `privacy.show_text` | `true` | show pending commands and prompt first lines (read live, never stored) |
 | `run.worktree_dir` | `""` | parent dir for `run --worktree` |
+| `handoff.suggest_at` | `0.70` | context fill, 0 to 1, at which a done or idle session shows `⇄ handoff`; `0` turns it off |
+| `handoff.prompt` | `""` | inline override of the handoff prompt template |
+| `handoff.dir` | `""` | where the handoff doc goes outside a git repo |
+| `handoff.deadline` | `"5m"` | how long a handoff waits for the doc |
+| `handoff.auto` | `false` | start the handoff without a key press |
 
 Directories follow `XDG_*`, or `~/.config`, `~/.local/state`, `~/.cache` and
 `~/.local/share`. Override with `BOSUN_CONFIG_DIR`, `BOSUN_STATE_DIR`,
