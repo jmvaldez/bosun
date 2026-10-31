@@ -250,8 +250,38 @@ func TestDisplayPrecedenceTable(t *testing.T) {
 	}
 }
 
+func TestHandedOffDisplayAndQueue(t *testing.T) {
+	for _, state := range []string{Done, Idle} {
+		s := &Session{State: state, Runaway: true, HandoffSuggested: true, HandedOff: true}
+		if got := s.Display(); got != HandedOff {
+			t.Errorf("%s display = %q, want handed-off", state, got)
+		}
+	}
+	if got := (&Session{State: Working, HandedOff: true}).Display(); got != Working {
+		t.Errorf("a handed-off session back at work displays %q", got)
+	}
+	if got := (&Session{State: NeedsYou, HandedOff: true}).Display(); got != NeedsYou {
+		t.Errorf("needs-you display = %q", got)
+	}
+	q := Queue(map[string]*Session{"a": {ID: "a", State: Done, HandedOff: true, Loc: Locator{Pane: "%1"}}})
+	if len(q) != 0 {
+		t.Errorf("queue = %v, a handed-off session must leave it", q)
+	}
+}
+
+func TestSessionStartRecordsHandedOffFrom(t *testing.T) {
+	s := run(t, ev(0, "SessionStart", func(e *hook.Event) { e.Start = &hook.StartExtra{HandoffFrom: "old-1"} }))
+	if s.HandedOffFrom != "old-1" {
+		t.Errorf("HandedOffFrom = %q", s.HandedOffFrom)
+	}
+	s.Apply(ev(5, "SessionStart", func(e *hook.Event) { e.Src = "compact"; e.Start = &hook.StartExtra{} }))
+	if s.HandedOffFrom != "old-1" {
+		t.Errorf("a later SessionStart cleared the link: %q", s.HandedOffFrom)
+	}
+}
+
 func TestRankOrdersHandoffBetweenRunawayAndDone(t *testing.T) {
-	order := []string{NeedsYou, Runaway, Handoff, Done, Working, Quiet, Idle}
+	order := []string{NeedsYou, Runaway, Handoff, Done, Working, Quiet, HandedOff, Idle}
 	for i := 1; i < len(order); i++ {
 		if Rank(order[i-1]) >= Rank(order[i]) {
 			t.Errorf("Rank(%s) = %d is not below Rank(%s) = %d", order[i-1], Rank(order[i-1]), order[i], Rank(order[i]))

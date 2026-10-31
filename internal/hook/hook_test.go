@@ -147,6 +147,31 @@ func TestEnvTaskBeatsBranch(t *testing.T) {
 	}
 }
 
+func TestHandoffFromIsRecordedOnSessionStartOnly(t *testing.T) {
+	e := newEnv(t)
+	e.vars["BOSUN_HANDOFF_FROM"] = "old-sess-1"
+	e.rebuild()
+	e.run(`{"session_id":"` + sid + `","hook_event_name":"SessionStart","cwd":"/nonexistent"}`)
+	e.run(`{"session_id":"` + sid + `","hook_event_name":"UserPromptSubmit"}`)
+	evs := e.events(t, sid)
+	if got := evs[0].Start.HandoffFrom; got != "old-sess-1" {
+		t.Errorf("HandoffFrom = %q", got)
+	}
+	if evs[1].Start != nil {
+		t.Errorf("a later event carries the start block: %+v", evs[1].Start)
+	}
+}
+
+func TestHandoffFromNeedsAValidSessionID(t *testing.T) {
+	e := newEnv(t)
+	e.vars["BOSUN_HANDOFF_FROM"] = "../../etc/passwd"
+	e.rebuild()
+	e.run(`{"session_id":"` + sid + `","hook_event_name":"SessionStart","cwd":"/nonexistent"}`)
+	if got := e.events(t, sid)[0].Start.HandoffFrom; got != "" {
+		t.Errorf("HandoffFrom = %q, want it dropped", got)
+	}
+}
+
 func TestEnvReadsStayOnAllowlist(t *testing.T) {
 	e := newEnv(t)
 	var asked []string
@@ -155,7 +180,7 @@ func TestEnvReadsStayOnAllowlist(t *testing.T) {
 	e.run(`{"session_id":"` + sid + `","hook_event_name":"SessionStart","cwd":"/nonexistent"}`)
 	allowed := map[string]bool{
 		"TMUX": true, "TMUX_PANE": true, "CLAUDE_PID": true, "CLAUDE_CODE_SESSION_ID": true,
-		"BOSUN_TASK": true, "CLAUDE_CODE_ENTRYPOINT": true,
+		"BOSUN_TASK": true, "CLAUDE_CODE_ENTRYPOINT": true, "BOSUN_HANDOFF_FROM": true,
 	}
 	for _, k := range asked {
 		if !allowed[k] {

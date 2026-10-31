@@ -53,6 +53,8 @@ type StartExtra struct {
 	Account    string `json:"acct,omitempty"`
 	StartTok   string `json:"stok,omitempty"`
 	Entrypoint string `json:"entrypoint,omitempty"`
+	// HandoffFrom is the session this one continues, set by `bosun handoff`.
+	HandoffFrom string `json:"handoff_from,omitempty"`
 }
 
 // encode returns one line (with trailing newline) no longer than MaxLine. When
@@ -95,7 +97,7 @@ func (e *Event) clip() {
 		b.ID, b.Type, b.Status = clipString(b.ID), clipString(b.Type), clipString(b.Status)
 	}
 	if x := e.Start; x != nil {
-		for _, s := range []*string{&x.Cwd, &x.Transcript, &x.Repo, &x.Branch, &x.Task, &x.TaskSrc, &x.Account, &x.StartTok, &x.Entrypoint} {
+		for _, s := range []*string{&x.Cwd, &x.Transcript, &x.Repo, &x.Branch, &x.Task, &x.TaskSrc, &x.Account, &x.StartTok, &x.Entrypoint, &x.HandoffFrom} {
 			*s = clipString(*s)
 		}
 	}

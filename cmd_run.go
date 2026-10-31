@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/jmvaldez/bosun/internal/config"
 	"github.com/jmvaldez/bosun/internal/shell"
 	"github.com/jmvaldez/bosun/internal/task"
 	"github.com/jmvaldez/bosun/internal/tmux"
@@ -71,22 +72,31 @@ func (a *app) runTask(args []string) int {
 		return 2
 	}
 
-	exe, err := a.exe()
-	if err != nil {
+	if err := a.openTaskWindow(tc, cfg, dir, key, nil, claudeArgs); err != nil {
 		fmt.Fprintf(a.errw, "bosun run: %v\n", err)
 		return 1
+	}
+	return 0
+}
+
+// openTaskWindow opens a tasked Claude Code window at dir. env holds extra
+// NAME=value entries for the window beside BOSUN_TASK, and claudeArgs follow
+// the launcher on its command line. `bosun run` and `bosun handoff` share it.
+func (a *app) openTaskWindow(tc tmux.Client, cfg config.Config, dir, key string, env, claudeArgs []string) error {
+	exe, err := a.exe()
+	if err != nil {
+		return err
 	}
 	launcher := cfg.Claude.Launcher
 	if launcher == "" {
 		launcher = "claude"
 	}
 	command := launchCommand(exe, launcher, key, a.ad.Getenv("SHELL"), claudeArgs)
-	if err := tc.NewNamedWindow(dir, key, []string{"BOSUN_TASK=" + key}, command); err != nil {
-		fmt.Fprintf(a.errw, "bosun run: tmux: %v\n", err)
-		return 1
+	if err := tc.NewNamedWindow(dir, key, append([]string{"BOSUN_TASK=" + key}, env...), command); err != nil {
+		return fmt.Errorf("tmux: %w", err)
 	}
 	fmt.Fprintf(a.out, "opened window %s in %s\n", key, dir)
-	return 0
+	return nil
 }
 
 // resolveDir picks the window's directory: dir if given, else the invoking

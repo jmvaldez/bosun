@@ -168,8 +168,8 @@ func (m *Model) hints(inner int) string {
 	var items []hint
 	var drop []int // indexes to give up first, least important first
 	if m.tab == TabAgents {
-		items = []hint{{"enter", "jump"}, {"a", "oldest waiting"}, {"x", "ack alert"}, {"!", "interrupt"}, {"d", "review diff"}, {"s", "spend for row"}, {"tab", "spend view"}, {"esc", "close"}}
-		drop = []int{6, 1, 5, 4, 3, 2}
+		items = []hint{{"enter", "jump"}, {"a", "oldest waiting"}, {"x", "ack alert"}, {"!", "interrupt"}, {"h", "hand off"}, {"d", "review diff"}, {"s", "spend for row"}, {"tab", "spend view"}, {"esc", "close"}}
+		drop = []int{7, 1, 6, 5, 4, 3, 2}
 	} else {
 		items = []hint{{"←→", "collapse / expand"}, {"b", "cycle group by"}, {"r", "range"}, {"e", "export CSV"}, {"enter", "jump"}, {"tab", "status view"}, {"esc", "close"}}
 		drop = []int{5, 4, 1, 3, 2}
@@ -481,17 +481,22 @@ func (m *Model) stateText(v eval.View) (string, string) {
 			return "permission · " + m.rel(v, info.Target), cAmber
 		}
 		return "permission", cAmber
+	case v.HandoffPhase == "writing":
+		return "handoff · writing the doc", cCyan
+	case v.HandoffPhase == "launching":
+		return "handoff · opening the new window", cCyan
+	case v.Display == live.HandedOff:
+		return "handed off · work continues in a new window", cGrey
 	case v.Display == live.Runaway:
 		if len(v.Alerts) > 0 {
 			return "runaway · " + v.Alerts[0], cRed
 		}
 		return "runaway", cRed
 	case v.Display == live.Handoff:
-		// Phase 4 adds the h key; until then the line names no key.
 		if v.CtxPct != nil {
-			return fmt.Sprintf("handoff · context %.0f%% · consider a handoff", *v.CtxPct), cCyan
+			return fmt.Sprintf("handoff · context %.0f%% · h to hand off", *v.CtxPct), cCyan
 		}
-		return "handoff · consider a handoff", cCyan
+		return "handoff · h to hand off", cCyan
 	case v.Display == live.Done:
 		if v.Edits > 0 {
 			return fmt.Sprintf("done · ready to review (%d files)", v.Edits), cGreen

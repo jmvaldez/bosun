@@ -40,6 +40,41 @@ Directories follow `XDG_*`, or `~/.config`, `~/.local/state`, `~/.cache` and
 `~/.local/share`. Override with `BOSUN_CONFIG_DIR`, `BOSUN_STATE_DIR`,
 `BOSUN_CACHE_DIR` or `BOSUN_DATA_DIR`.
 
+## Handoff
+
+When a session's context fills, `h` in the popup (or `bosun handoff SID|TASK`)
+hands the work to a fresh session:
+
+1. bosun pastes a prompt into the session asking for a handoff doc, and waits for
+   it to be submitted (a `UserPromptSubmit` event within 10 s, else `not
+   submitted`).
+2. The session writes the doc. Claude Code's default permission mode asks you to
+   approve that write; the wait pauses while the session needs you, so the
+   deadline (`handoff.deadline`) only counts time the session is working.
+3. When the turn ends with a fresh, non-empty doc, bosun opens a new window on
+   the same task and directory whose first prompt is `Read <doc> and continue
+   the work it describes.`
+4. The old row shows `handed off` and leaves the jump queue. The pane stays open.
+
+The row shows `writing the doc` and `opening the new window` while it runs.
+`bosun handoff SID|TASK --cancel` stops one. A session that is mid-turn needs
+`--force` (the popup asks first). A session with no task is refused: set one
+with `bosun tag`.
+
+**Where the doc goes.** In a git repo it is `<worktree root>/.bosun/handoff-<session id>.md`, and
+`.bosun/` is added to the repo's `info/exclude` (never `.gitignore`), so git
+never sees it. Claude Code treats a write under `.git` as a sensitive file, which
+is why it is not kept there. Outside a git repo the doc goes in `handoff.dir`,
+and bosun refuses when that is unset. The doc is your session's text: bosun
+never copies it into its own state, logs or ledger.
+
+**Prompt override.** `handoff.prompt` replaces the built-in prompt. It should
+contain `{{doc}}`, which bosun replaces with the doc's path; without it the
+session has no way to know where to write.
+
+`bosun doctor` shows the outcome of the last 10 handoffs and warns when the same
+failure repeats.
+
 ## Tasks
 
 A task labels a session for the popup and for `bosun spend --by task`. It can be

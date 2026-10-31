@@ -39,6 +39,7 @@ const (
 	envSessionID  = "CLAUDE_CODE_SESSION_ID"
 	envTask       = "BOSUN_TASK"
 	envEntrypoint = "CLAUDE_CODE_ENTRYPOINT"
+	envHandoff    = "BOSUN_HANDOFF_FROM"
 )
 
 // Run handles one hook invocation and returns the process exit code, which is
@@ -115,6 +116,10 @@ func startExtra(ad platform.Adapters, p payload, pid int) *StartExtra {
 		x.Task, x.TaskSrc = fromEnv, task.SourceEnv
 	case parser.Key(info.Branch) != "":
 		x.Task, x.TaskSrc = parser.Key(info.Branch), task.SourceBranch
+	}
+	// `bosun handoff` names the session it continues; only a valid id is kept.
+	if from := ad.Getenv(envHandoff); paths.ValidSessionID(from) {
+		x.HandoffFrom = from
 	}
 	x.Account = cachedAccount(ad.Paths.Identity())
 	if pid > 0 && ad.Procs != nil {

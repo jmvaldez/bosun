@@ -53,6 +53,7 @@ func commands() []command {
 		{name: "doctor", readOnly: true, run: (*app).doctor},
 		{name: "uninstall", readOnly: true, run: (*app).uninstall},
 		{name: "run", run: (*app).runTask},
+		{name: "handoff", catchUp: true, run: (*app).handoff},
 		{name: "notify", run: (*app).notifyCmd},
 		{name: "notify-dispatch", run: (*app).notifyDispatch},
 		{name: "notify-click", run: (*app).notifyClick},
@@ -160,6 +161,8 @@ func usage(w io.Writer) {
   tag TEXT [--session ID] | --clear       set or clear a session's task (free text, up to 64 bytes)
   run --task TEXT [--dir P] [--worktree BRANCH] [-- ARGS]
                                           open a tasked Claude Code window in tmux
+  handoff SID|TASK [--force] [--cancel] [--wait]
+                                          have a session write a handoff doc and continue it in a new window
   backfill [--since 30d]                  ingest transcript history into the ledger
   doctor [--json]                         read-only self-check; exits non-zero on any failure
   uninstall [--apply [--yes]] [--purge] [--purge-config]

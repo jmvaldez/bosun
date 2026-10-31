@@ -19,7 +19,9 @@ that needs you.
   steps, stalled sessions, and days running above your usual spend.
 - **Hand off before the context fills.** A done or idle session past 70% of
   its context window shows `⇄ handoff` in the bar and popup. It is a
-  suggestion, not a runaway, and the session stays in the jump queue.
+  suggestion, not a runaway, and the session stays in the jump queue. Press `h`
+  in the popup to have the session write a handoff doc and continue the work in
+  a new window.
 - **See what each one is doing.** `prefix + W` opens a popup with each
   session's task, repo, spend, and live activity (`running go test ./...`,
   `editing ui/view.go`, `waiting on 2 subagents`).
@@ -59,7 +61,7 @@ See the [Roadmap](https://github.com/jmvaldez/bosun/wiki/Roadmap) for details.
 ## Technical notes
 
 **Keys:** `prefix + W` popup · `prefix + $` spend view · `prefix + a` next
-waiting session. In the popup, `enter` jumps, `!` interrupts, `d` diffs, `q` closes.
+waiting session. In the popup, `enter` jumps, `!` interrupts, `h` hands off, `d` diffs, `q` closes.
 
 **CLI:**
 
@@ -68,6 +70,7 @@ bosun status [--json]       current state of every session
 bosun spend [--by K]        cost by day, task, repo, session, prompt, request, model, subagent
 bosun tag TEXT              label this session with a task (e.g. ABC-123)
 bosun run --task TEXT       open a new Claude Code window with a task set
+bosun handoff SID|TASK      have a full session write a handoff doc and continue it in a new window
 bosun doctor                self-check; run this first if the bar is empty
 ```
 

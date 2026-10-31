@@ -1,15 +1,22 @@
 package main
 
 import (
+	"encoding/json"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jmvaldez/bosun/internal/config"
 	"github.com/jmvaldez/bosun/internal/eval"
+	"github.com/jmvaldez/bosun/internal/handoff"
+	"github.com/jmvaldez/bosun/internal/hook"
+	"github.com/jmvaldez/bosun/internal/live"
+	"github.com/jmvaldez/bosun/internal/paths"
+	"github.com/jmvaldez/bosun/internal/tmux"
 )
 
 const (
@@ -147,4 +154,91 @@ func assertNothingStored(t *testing.T, root string, needles ...string) {
 		}
 		return nil
 	})
+}
+
+const sentinelDoc = "SENTINEL-DOC-5c1e the refund plan"
+
+// handoffClock advances only when Run sleeps.
+type handoffClock struct{ now time.Time }
+
+func (c *handoffClock) Now() time.Time        { return c.now }
+func (c *handoffClock) Sleep(d time.Duration) { c.now = c.now.Add(d) }
+
+type handoffTmux struct{}
+
+func (handoffTmux) Panes() ([]tmux.Pane, error) {
+	return []tmux.Pane{{ServerPID: 4242, ID: "%3", PanePID: 500}}, nil
+}
+func (handoffTmux) PasteText(string, string) error  { return nil }
+func (handoffTmux) SendKeys(string, []string) error { return nil }
+
+type handoffProcs struct{}
+
+func (handoffProcs) StartToken(int) (string, error)   { return "tok", nil }
+func (handoffProcs) StartTime(int) (time.Time, error) { return time.Time{}, nil }
+func (handoffProcs) Alive(pid int, tok string) bool   { return pid == 501 && tok == "tok" }
+func (handoffProcs) Parent(int) (int, error)          { return 500, nil }
+
+// D-27 for the handoff: the doc is the session's text. It lives where the
+// session wrote it, and none of it reaches handoff.json, handoff.jsonl,
+// live.json or the events.
+func TestHandoffDocIsNeverStored(t *testing.T) {
+	root := t.TempDir()
+	p := paths.Paths{State: root + "/state"}
+	docDir := t.TempDir() // outside every bosun dir: this is the user's repo
+	docPath := docDir + "/handoff-aaaa.md"
+	os.WriteFile(docPath, []byte("## Goal\n"+sentinelDoc+"\n"), 0o600)
+
+	clk := &handoffClock{now: time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)}
+	var evs []hook.Event
+	sess := &live.Session{ID: "aaaa", State: live.Done, Task: "ABC-1", Cwd: docDir, PID: 501, StartTok: "tok",
+		Loc: live.Locator{Pane: "%3", SPID: 4242}}
+	f := live.File{Sessions: map[string]*live.Session{"aaaa": sess}}
+	d := handoff.Deps{
+		Clock: clk, Tmux: handoffTmux{}, Procs: handoffProcs{}, Paths: p,
+		Cfg:  config.Handoff{Deadline: time.Minute},
+		Live: func() live.File { return f },
+		Events: func(string) []hook.Event {
+			// The prompt is submitted at once; the turn ends two seconds later.
+			evs = []hook.Event{{Ev: "UserPromptSubmit", SID: "aaaa", TS: clk.now.Add(-time.Second).Format(time.RFC3339Nano)}}
+			if clk.now.After(time.Date(2026, 10, 31, 12, 0, 3, 0, time.UTC)) {
+				evs = append(evs, hook.Event{Ev: "Stop", SID: "aaaa", TS: clk.now.Format(time.RFC3339Nano)})
+			}
+			return evs
+		},
+		Stat:   func(string) (time.Time, int64, error) { return clk.now, 64, nil },
+		Doc:    func(*live.Session) (string, error) { return docPath, nil },
+		Launch: func(string, string, string, string) error { return nil },
+	}
+	// The state dir exists as it would after real hooks ran.
+	os.MkdirAll(p.Session("aaaa"), 0o700)
+	if st, err := handoff.Run(d, "aaaa"); err != nil || st.Phase != handoff.PhaseDone {
+		t.Fatalf("Run = %+v, %v", st, err)
+	}
+	if err := live.Write(p.Live(), f); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range evs {
+		line, _ := json.Marshal(e)
+		appendTo(t, p.Events("aaaa"), line)
+	}
+	for _, path := range []string{p.Handoff("aaaa"), p.HandoffLog(), p.Live(), p.Events("aaaa")} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("%s was not written: %v", path, err)
+		}
+	}
+	assertNothingStored(t, root, "SENTINEL-")
+	if b, _ := os.ReadFile(docPath); !strings.Contains(string(b), sentinelDoc) {
+		t.Fatal("the doc lost its text; the test is not testing anything")
+	}
+}
+
+func appendTo(t *testing.T, path string, line []byte) {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	f.Write(append(line, '\n'))
 }

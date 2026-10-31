@@ -19,6 +19,7 @@ import (
 type fakeActions struct {
 	jumped, diffed, exported []string
 	interrupts               []eval.View
+	handoffs                 []string
 	dismissed                [][2]string
 	peekText, promptText     string
 	interruptMsg             string
@@ -31,6 +32,10 @@ func (f *fakeActions) Diff(c string) error { f.diffed = append(f.diffed, c); ret
 func (f *fakeActions) Interrupt(v eval.View) (string, error) {
 	f.interrupts = append(f.interrupts, v)
 	return f.interruptMsg, nil
+}
+func (f *fakeActions) Handoff(v eval.View, force bool) (string, error) {
+	f.handoffs = append(f.handoffs, fmt.Sprintf("%s force=%v", v.ID, force))
+	return "handoff started: " + v.Task, nil
 }
 func (f *fakeActions) Dismiss(s, a string) (int, error) {
 	f.dismissed = append(f.dismissed, [2]string{s, a})
@@ -751,5 +756,76 @@ func TestUntrustedTextNeverReachesTheFrameRaw(t *testing.T) {
 	press(m, "s")
 	if raw := strings.Join(m.View(140, 30), "\n"); strings.Contains(raw, "\x1b]") || strings.Contains(raw, "\x07") {
 		t.Errorf("spend frame carries an OSC sequence:\n%q", raw)
+	}
+}
+
+// handoffRowModel is a popup with one row in the given display state.
+func handoffRowModel(display, task, phase string) (*Model, *fakeActions) {
+	act := &fakeActions{}
+	m := New(Options{}, act)
+	v := view("1aaaaaaa", display, "work:1.0", "me/api", task, time.Minute)
+	v.HandoffPhase = phase
+	m.SetData(Data{Now: now, Sessions: []eval.View{v}})
+	return m, act
+}
+
+func TestHandoffKeyConfirmsThenStarts(t *testing.T) {
+	for _, display := range []string{"handoff", "done"} {
+		m, act := handoffRowModel(display, "ABC-1", "")
+		press(m, "h")
+		if p := frame(m, 140, 26); !strings.Contains(p, "hand off ABC-1? writes the doc, opens a new window, keeps this pane. y/n") {
+			t.Errorf("%s: prompt missing:\n%s", display, p)
+		}
+		press(m, "n")
+		if len(act.handoffs) != 0 || m.Status() != "nothing sent" {
+			t.Errorf("%s: n must start nothing: %v %q", display, act.handoffs, m.Status())
+		}
+		press(m, "h", "y")
+		if len(act.handoffs) != 1 || act.handoffs[0] != "1aaaaaaa force=false" || m.Status() != "handoff started: ABC-1" {
+			t.Errorf("%s: handoffs = %v status %q", display, act.handoffs, m.Status())
+		}
+		if len(act.interrupts) != 0 {
+			t.Errorf("%s: y at a handoff prompt interrupted the pane", display)
+		}
+	}
+}
+
+func TestHandoffKeyOnAWorkingRowForces(t *testing.T) {
+	m, act := handoffRowModel("working", "ABC-1", "")
+	press(m, "h")
+	if p := frame(m, 140, 26); !strings.Contains(p, "session is mid-turn; hand off anyway (--force)? y/n") {
+		t.Errorf("prompt missing:\n%s", p)
+	}
+	press(m, "y")
+	if len(act.handoffs) != 1 || act.handoffs[0] != "1aaaaaaa force=true" {
+		t.Errorf("handoffs = %v", act.handoffs)
+	}
+}
+
+func TestHandoffKeyRefusals(t *testing.T) {
+	for _, c := range []struct{ display, task, phase, status string }{
+		{"needs-you", "ABC-1", "", "nothing to hand off: the row is needs-you"},
+		{"idle", "ABC-1", "", "nothing to hand off: the row is idle"},
+		{"done", "", "", "no task: set one with `bosun tag` before a handoff"},
+		{"done", "ABC-1", "writing", "a handoff is already under way"},
+	} {
+		m, act := handoffRowModel(c.display, c.task, c.phase)
+		press(m, "h")
+		if m.Status() != c.status || m.confirm != nil || len(act.handoffs) != 0 {
+			t.Errorf("%+v: status %q confirm %v", c, m.Status(), m.confirm)
+		}
+	}
+}
+
+func TestHandoffRowsShowTheirPhase(t *testing.T) {
+	for phase, want := range map[string]string{"writing": "handoff · writing the doc", "launching": "handoff · opening the new window"} {
+		m, _ := handoffRowModel("done", "ABC-1", phase)
+		if p := frame(m, 140, 26); !strings.Contains(p, want) {
+			t.Errorf("%s: row lacks %q:\n%s", phase, want, p)
+		}
+	}
+	m, _ := handoffRowModel("handed-off", "ABC-1", "")
+	if p := frame(m, 140, 26); !strings.Contains(p, "handed off · work continues in a new window") {
+		t.Errorf("handed-off row:\n%s", p)
 	}
 }

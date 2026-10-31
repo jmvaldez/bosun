@@ -57,6 +57,9 @@ type Actions interface {
 	// Interrupt re-checks the pane and sends the interrupt keys; the message
 	// says what happened ("sent", or "pane changed, not sent").
 	Interrupt(v eval.View) (string, error)
+	// Handoff starts `bosun handoff` for the row's session, detached; force
+	// allows a session that is mid-turn. The message says what was started.
+	Handoff(v eval.View, force bool) (string, error)
 	Dismiss(session, agent string) (int, error)
 	Export(period, group string) (string, error)
 	// Peek and PromptLine read transcript text at render time; callers drop it
@@ -89,6 +92,9 @@ type confirm struct {
 	prompt string
 	view   eval.View
 	agent  string
+	// handoff makes y start a handoff instead of sending the interrupt keys;
+	// force is set for a session that is mid-turn.
+	handoff, force bool
 }
 
 type Model struct {
@@ -169,6 +175,15 @@ func (m *Model) updateConfirm(k term.Key) bool {
 		m.status = "nothing sent"
 		return false
 	}
+	if c.handoff {
+		msg, err := m.act.Handoff(c.view, c.force)
+		if err != nil {
+			m.status = "handoff failed: " + err.Error()
+		} else {
+			m.status = msg
+		}
+		return false
+	}
 	msg, err := m.act.Interrupt(c.view)
 	switch {
 	case err != nil:
@@ -239,6 +254,12 @@ func (m *Model) updateAgents(k term.Key) bool {
 		default:
 			m.status = fmt.Sprintf("dismissed %d alert(s)", n)
 		}
+	case "h":
+		v, _, ok := m.selected()
+		if !ok {
+			return false
+		}
+		m.askHandoff(v)
 	case "!":
 		v, r, ok := m.selected()
 		if !ok {
@@ -259,6 +280,32 @@ func (m *Model) updateAgents(k term.Key) bool {
 		m.confirm = c
 	}
 	return false
+}
+
+// askHandoff opens the handoff confirm for a row, or says why it cannot.
+func (m *Model) askHandoff(v eval.View) {
+	who := taskOrUntasked(v.Task)
+	c := &confirm{view: v, handoff: true}
+	switch {
+	case v.PaneGone:
+		m.status = "pane gone: cannot hand off"
+		return
+	case v.HandoffPhase != "":
+		m.status = "a handoff is already under way"
+		return
+	case v.Task == "":
+		m.status = "no task: set one with `bosun tag` before a handoff"
+		return
+	case v.Display == live.Handoff || v.Display == live.Done:
+		c.prompt = fmt.Sprintf("hand off %s? writes the doc, opens a new window, keeps this pane. y/n", who)
+	case v.Display == live.Working || v.Display == live.Quiet:
+		c.force = true
+		c.prompt = "session is mid-turn; hand off anyway (--force)? y/n"
+	default:
+		m.status = "nothing to hand off: the row is " + v.Display
+		return
+	}
+	m.confirm = c
 }
 
 func (m *Model) jump(v eval.View) bool {

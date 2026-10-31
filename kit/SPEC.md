@@ -164,7 +164,7 @@ Tests and demos set the `BOSUN_*_DIR` vars. They never set `XDG_*` for any proce
 - Hooks win over `agents.json` on a live session. `agents.json` absence plus `kill -0` plus a start token mismatch drop dead sessions.
 - Subagents: `running` and `ended`, paired on `agent_id`. A stop with no matching start is ignored.
 - Main vs subagent: key on `agent_id` presence, never `agent_type`.
-- Display precedence: `needs-you` > `runaway` > `handoff` > `done` > `working` > `quiet` > `idle`. Runaway is an active, undismissed runaway alert, not a fifth state. `handoff` is the advisory `handoff` rule on a `done` or `idle` session; `quiet` is the `quiet` rule on a `working` one (D-27, D-34).
+- Display precedence: `needs-you` > `runaway` > `handoff` > `done` > `working` > `quiet` > `handed-off` > `idle`. Runaway is an active, undismissed runaway alert, not a fifth state. `handoff` is the advisory `handoff` rule on a `done` or `idle` session; `quiet` is the `quiet` rule on a `working` one (D-27, D-34). `handed-off` is a `done` or `idle` session whose `handoff.json` phase is `done`; it ranks just above `idle` in ordering, and a session in that state shows it instead of any alert (D-36).
 
 ### Rules
 
@@ -285,12 +285,13 @@ Empty only with zero agents and $0 today.
 - Peek (`v`, when `ui.peek` is on): a second line under the selected row shows what the agent is doing or asking. bosun reads the tail (last 64 KiB) of that session's transcript at render time and finds the newest `tool_use` with no matching result: Bash shows the command, Edit/Write/Read show the file path, any other tool shows its first string field. One line, control characters stripped, cut to the row width. Re-read once per refresh while peek is open, held only for the frame, never written, logged, notified, or cached. On a prompt node in the Spend tree, `v` shows that prompt's first line the same way.
 - Interrupt (`!`): asks `interrupt <WHERE> <TASK>? y/n`. On `y`, bosun re-checks the pane right then: the locator's server pid still matches, the pane id still exists, and `pane_pid` ancestry still holds the session's pid with a matching start token. Any mismatch refuses with `pane changed, not sent`. On a pass it runs `send-keys -t <pane> <ui.interrupt_keys>` (default `Escape`). Claude Code cannot stop one subagent alone, so `!` on a subagent row interrupts its parent's turn and the prompt says so.
 - Spend tab, two panes. The summary pane shows today against the budget (a bar when `rules.daily_budget` is set, else the pace ratio), the last 7 days as one bar per day, today by model, and the subagent share. The tree pane goes task > agent session > prompt > request; `→`/`l` expands and `←`/`h` collapses. Prompts are labeled `prompt #N` plus start time, never prompt text. Request rows show model, input / output / cache tokens, and cost. A subagent is one node under the prompt that started it (type, model, request count, runtime, `est.` spend), red with an active runaway alert. Below the tree: the `unattributed` row and `TOTAL` with the estimated share. `p` cycles today, 7d, 30d; `g` cycles task, repo, session, model; `e` writes the current view as CSV to `<data dir>/exports/spend-<period>-<group>-<timestamp>.csv` (atomic) and shows the path. Below 110 columns the summary pane collapses to two lines above the tree. Footer shows pace status and "API-rate estimate".
-- Keys: `j/k`/arrows, `h/l` and `←/→` in the tree, `enter`, `tab`, `a`, `s`, `d`, `v`, `x`, `!`, `p`, `g`, `e`, `q`/`esc`. 1 s refresh.
+- Hand off (`h`): on a `handoff` or `done` row it asks `hand off <task>? writes the doc, opens a new window, keeps this pane. y/n`; on a `working` row `session is mid-turn; hand off anyway (--force)? y/n`. On `y` it starts a detached `bosun handoff <sid>`, and the row shows `writing the doc` then `opening the new window` while the state file says `writing` or `launching`. When the state file says `done` the row shows `handed off` (grey, ranked just above idle) and leaves the jump queue. Every write to the pane goes through `panewrite` (D-35).
+- Keys: `j/k`/arrows, `h/l` and `←/→` in the tree (`h` hands off on the status view), `enter`, `tab`, `a`, `s`, `d`, `v`, `x`, `!`, `p`, `g`, `e`, `q`/`esc`. 1 s refresh.
 - Inside the popup, `TMUX_PANE` is wrong. Use `display -p '#{client_name}'` and `list-clients`.
 
 ### Jump (prefix + a)
 
-- Waiting queue: needs-you oldest first (by time in state), then done oldest first. Runaway, working, idle are never targets. Repeat presses walk and wrap. Empty: `bosun: nothing waiting`.
+- Waiting queue: needs-you oldest first (by time in state), then done oldest first. Runaway, working, idle and handed-off are never targets. Repeat presses walk and wrap. Empty: `bosun: nothing waiting`.
 - Client from `#{client_name}`. Current pane from `list-clients`, not `display -p -c`.
 - `switch-client -c <client> -t <pane>`.
 
@@ -486,6 +487,7 @@ Jump walk: start on `work:3.0`, press 1 `work:1.0`, press 2 `home:1.0`, press 3 
 | `ui` | popup | M4 |
 | `tag TEXT [--session ID] \| --clear` | set or clear a session's task | M5 |
 | `run --task KEY [--dir P] [--worktree BRANCH] [-- ARGS]` | open a tasked session in a new window | M5 |
+| `handoff SID\|TASK [--force] [--cancel] [--wait]` | hand a session off to a new window (D-36) | handoff |
 | `backfill [--since 30d]` | ingest history | M6 |
 | `doctor [--json]` | self-check | M6 |
 | `uninstall [--purge] [--purge-config]` | print removal steps | M6 |
